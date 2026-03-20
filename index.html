@@ -1,0 +1,2190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IM GP Pricing Calculator</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent:       #B01267;
+      --accent-dark:  #8f0f55;
+      --burgundy:     #8B1538;
+      --dark-bg:      #111519;
+      --dark-grad:    #171c21;
+      --dark-border:  #222a31;
+      --text-heading: #2c1810;
+      --text-body:    #495057;
+      --text-muted:   #6c757d;
+      --text-light:   #e9eef3;
+      --bg-light:     #f8f9fa;
+      --bg-alt:       #eceff3;
+      --border-light: #e9ecef;
+      --green:        #28a745;
+      --green-light:  #d4edda;
+      --amber:        #856404;
+      --red:          #dc3545;
+      --blue:         #007BFF;
+      --blue-light:   #e8f0fe;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      font-size: 13px;
+      color: var(--text-body);
+      background: var(--bg-alt);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(180deg, var(--dark-grad), var(--dark-bg));
+      color: white;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+
+    .brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+    .brand-logo {
+      width: 38px; height: 38px;
+      background: linear-gradient(45deg, var(--accent), var(--accent-dark));
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 15px; color: white; letter-spacing: -0.5px;
+      box-shadow: 0 2px 6px rgba(176,18,103,0.4);
+    }
+
+    .brand-text { line-height: 1.2; }
+    .brand-title { font-size: 14px; font-weight: 600; color: var(--text-light); }
+    .brand-sub   { font-size: 10px; color: rgba(233,238,243,0.45); text-transform: uppercase; letter-spacing: 0.7px; }
+
+    .header-customer { display: flex; align-items: center; gap: 8px; flex: 1; }
+    .header-customer label { font-size: 12px; color: rgba(233,238,243,0.6); white-space: nowrap; }
+
+    #customerName {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: white; padding: 5px 10px; border-radius: 6px;
+      font-size: 13px; font-family: var(--font); width: 220px;
+      transition: border-color 0.2s;
+    }
+    #customerName::placeholder { color: rgba(255,255,255,0.3); }
+    #customerName:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(176,18,103,0.2); }
+
+    .upload-zone {
+      border: 1.5px dashed rgba(255,255,255,0.28);
+      border-radius: 6px; padding: 6px 14px; cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+      transition: all 0.2s; font-size: 12px; color: rgba(233,238,243,0.6);
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent); background: rgba(176,18,103,0.15); color: white;
+    }
+    .upload-zone.loaded {
+      border-color: var(--green); background: rgba(40,167,69,0.12); color: #a3d9b1;
+    }
+    .upload-icon { font-size: 17px; }
+    #fileInput { display: none; }
+
+    .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+    /* ── Tabs ── */
+    .tabs-bar {
+      background: var(--dark-bg);
+      border-bottom: 1px solid var(--dark-border);
+      display: flex; gap: 1px; padding: 0 12px; flex-shrink: 0;
+    }
+    .tab-btn {
+      background: transparent; border: none; color: rgba(233,238,243,0.45);
+      padding: 9px 16px; cursor: pointer; font-family: var(--font);
+      font-size: 12px; font-weight: 500; border-bottom: 3px solid transparent;
+      transition: all 0.15s; white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text-light); }
+    .tab-btn.active { color: white; border-bottom-color: var(--accent); }
+    .tab-count {
+      background: rgba(255,255,255,0.1); border-radius: 10px;
+      padding: 1px 6px; font-size: 10px; margin-left: 4px;
+    }
+    .tab-btn.active .tab-count { background: rgba(176,18,103,0.35); }
+
+    /* ── Controls bar ── */
+    .controls-bar {
+      background: white; border-bottom: 1px solid var(--border-light);
+      padding: 7px 14px; display: flex; align-items: center;
+      gap: 12px; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .control-group { display: flex; align-items: center; gap: 6px; }
+    .control-group label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+    .ctrl-input {
+      border: 1px solid var(--border-light); border-radius: 4px;
+      padding: 4px 8px; font-size: 12px; font-family: var(--font);
+      width: 68px; text-align: right; transition: border-color 0.2s;
+    }
+    .ctrl-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(176,18,103,0.12); }
+
+    .btn {
+      border: none; border-radius: 6px; padding: 5px 12px;
+      font-size: 12px; font-family: var(--font); cursor: pointer;
+      font-weight: 600; transition: all 0.2s;
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-dark); }
+    .btn-export {
+      background: linear-gradient(45deg, var(--accent), var(--accent-dark));
+      color: white; box-shadow: 0 2px 6px rgba(176,18,103,0.3);
+    }
+    .btn-export:hover { background: linear-gradient(45deg, var(--accent-dark), #6d0940); }
+    .btn-export:disabled { background: #ccc; box-shadow: none; cursor: not-allowed; }
+    .btn-sm { padding: 3px 8px; font-size: 11px; }
+
+    /* Export dropdown */
+    .export-wrap { position: relative; }
+    .export-menu {
+      position: absolute; right: 0; top: calc(100% + 6px);
+      background: white; border: 1px solid var(--border-light);
+      border-radius: 8px; box-shadow: 0 8px 25px rgba(0,0,0,0.18);
+      min-width: 220px; z-index: 200; overflow: hidden;
+      animation: fadeDown 0.12s ease;
+    }
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .export-menu button {
+      display: block; width: 100%; text-align: left;
+      padding: 11px 16px; font-size: 13px; font-family: var(--font);
+      background: none; border: none; cursor: pointer;
+      color: var(--text-body); font-weight: 500;
+      border-bottom: 1px solid var(--border-light); transition: background 0.12s;
+    }
+    .export-menu button:last-child { border-bottom: none; }
+    .export-menu button:hover { background: var(--bg-alt); color: var(--accent); }
+    .export-menu .menu-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.6px; color: var(--text-muted);
+      padding: 8px 16px 4px; display: block;
+    }
+    .menu-formula-opt {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 8px 16px 10px; border-bottom: 1px solid var(--border-light);
+      cursor: pointer; font-size: 12px; color: var(--text-body); font-weight: 500;
+    }
+    .menu-formula-opt:hover { background: var(--bg-alt); }
+    .menu-formula-opt input { margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+    .menu-formula-opt small { display: block; color: var(--text-muted); font-weight: 400; font-size: 11px; margin-top: 2px; }
+    .menu-divider { height: 1px; background: var(--border-light); }
+
+    .controls-sep { width: 1px; height: 20px; background: var(--border-light); }
+    .controls-spacer { flex: 1; }
+
+    /* ── Main ── */
+    .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .panel.active { display: flex; }
+
+    /* ── Placeholder ── */
+    .placeholder {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; color: var(--text-muted); gap: 10px;
+    }
+    .placeholder-icon { font-size: 44px; opacity: 0.35; }
+    .placeholder h3 { font-size: 15px; font-weight: 500; color: var(--text-muted); }
+    .placeholder p { font-size: 12px; text-align: center; max-width: 280px; line-height: 1.5; }
+
+    /* ── Table wrapper ── */
+    .table-wrap { flex: 1; overflow: auto; padding: 16px; }
+
+    /* Centred container — sits inside .table-wrap */
+    .table-center {
+      display: flex;
+      justify-content: center;
+      min-width: 100%;          /* ensures centering even when viewport is wider than table */
+    }
+
+    /* Card around each table */
+    .table-card {
+      display: inline-block;    /* shrinks to table width */
+      border-radius: 8px;
+      /* overflow: hidden intentionally omitted — it breaks position:sticky on thead */
+      border: 1px solid var(--border-light);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.09);
+    }
+
+    /* Wine panel: two stacked sections */
+    .wine-sections {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+      min-width: 100%;
+      padding-bottom: 8px;
+    }
+    .wine-section-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .wine-section-label {
+      font-size: 11px; font-weight: 700; color: var(--accent);
+      text-transform: uppercase; letter-spacing: 0.8px;
+      align-self: flex-start;
+    }
+
+    /* ── Tables ── */
+    table {
+      border-collapse: collapse;
+      width: max-content;       /* column-width driven by content, not viewport */
+    }
+
+    thead th {
+      background: var(--dark-bg); color: var(--text-light);
+      font-size: 14px; font-weight: 600; padding: 9px 10px;
+      white-space: nowrap; position: sticky; top: 0; z-index: 10;
+      text-align: center; border-right: 1px solid var(--dark-border);
+    }
+    thead th.col-left { text-align: left; }
+    /* Two-row headers: second row must sit BELOW first row, not at top:0 */
+    thead tr:nth-child(2) th { top: 30px; }
+
+    /* Wine / Spirits group header colours */
+    thead th.g25, .th-group.g25 { background: #1a3a6e; }
+    thead th.g35, .th-group.g35 { background: #162e58; }
+    thead th.g50, .th-group.g50 { background: #112244; }
+    thead th.g125, .th-group.g125 { background: #4a1a5e; }
+    thead th.g175, .th-group.g175 { background: #3a1248; }
+    thead th.g250, .th-group.g250 { background: #2c0d38; }
+    thead th.gbtl, .th-group.gbtl { background: #1e0826; }
+    thead th.gpint, .th-group.gpint { background: #1a3a1a; }
+    thead th.ghalf, .th-group.ghalf { background: #0f2a0f; }
+
+    .th-group {
+      color: rgba(233,238,243,0.7); font-size: 13px; font-weight: 500;
+      text-align: center;
+      /* Fixed height keeps second-row top offset predictable */
+      height: 30px; line-height: 30px; padding: 0 10px;
+      border-bottom: 1px solid var(--dark-border);
+    }
+
+    tbody tr:nth-child(even) { background: var(--bg-light); }
+    tbody tr:hover { background: var(--blue-light); }
+
+    td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border-light);
+      border-right: 1px solid var(--border-light);
+      white-space: nowrap; font-size: 15px;
+    }
+    td.td-name   { white-space: nowrap; }
+    td.td-code   { color: var(--text-muted); font-size: 14px; font-family: monospace; }
+    td.td-num    { text-align: right; font-variant-numeric: tabular-nums; }
+    td.td-center { text-align: center; }
+
+    tr.subcat-row td {
+      background: var(--bg-alt); color: var(--text-heading);
+      font-weight: 600; font-size: 14px; text-transform: uppercase;
+      letter-spacing: 0.5px; padding: 5px 10px; border-top: 2px solid var(--accent);
+    }
+
+    /* Sub-category row inner layout */
+    .subcat-inner {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .subcat-ctrl {
+      display: flex; align-items: center; gap: 5px;
+      font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 12px;
+      color: var(--text-muted); flex-shrink: 0;
+    }
+    .subcat-ctrl .ctrl-input {
+      width: 56px; font-size: 12px; padding: 2px 6px;
+      background: rgba(255,255,255,0.85);
+    }
+    .subcat-ctrl .btn-sm { font-size: 11px; padding: 2px 8px; }
+
+    /* Editable cells */
+    td.editable { padding: 0; }
+    td.editable input {
+      width: 100%; border: none; background: transparent;
+      padding: 5px 8px; font-family: var(--font); font-size: 15px;
+      text-align: right; color: var(--text-body); font-variant-numeric: tabular-nums;
+    }
+    td.editable input:focus {
+      background: white; outline: 2px solid var(--accent);
+      outline-offset: -2px; border-radius: 2px;
+    }
+    td.editable.sell input { background: rgba(232,240,254,0.45); }
+    td.editable.sell input:focus { background: white; }
+    td.editable.gp   input { background: rgba(212,237,218,0.45); }
+    td.editable.gp   input:focus { background: white; }
+
+    .gp-low { color: var(--red); }
+    .gp-mid { color: var(--amber); }
+    .gp-ok  { color: var(--green); }
+    .warn { color: var(--red); font-size: 11px; font-style: italic; }
+
+    td.cost-cell { background: rgba(236,239,243,0.5); text-align: right; }
+
+    /* Fixed widths for numeric columns */
+    .cw-code   { width: 72px;  min-width: 72px; }
+    .cw-subcat { width: 112px; min-width: 112px; }
+    .cw-format { width: 96px;  min-width: 96px; }
+    .cw-units  { width: 72px;  min-width: 72px; }
+    .cw-cost   { width: 86px;  min-width: 86px; }
+    .cw-sell   { width: 80px;  min-width: 80px; }
+    .cw-gp     { width: 62px;  min-width: 62px; }
+    .cw-size   { width: 78px;  min-width: 78px; }
+    .cw-unit   { width: 78px;  min-width: 78px; }
+
+    /* ── Status bar ── */
+    .status-bar {
+      background: var(--dark-bg); color: rgba(233,238,243,0.45);
+      font-size: 11px; padding: 3px 14px; display: flex; gap: 16px;
+      flex-shrink: 0; border-top: 1px solid var(--dark-border);
+    }
+    .status-bar span { white-space: nowrap; }
+
+    ::-webkit-scrollbar { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-track { background: var(--bg-alt); }
+    ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════ HEADER ══════════════════════════ -->
+<header>
+  <div class="brand">
+    <div class="brand-logo">IM</div>
+    <div class="brand-text">
+      <div class="brand-title">GP Pricing Calculator</div>
+      <div class="brand-sub">Inverarity Morton</div>
+    </div>
+  </div>
+
+  <div class="header-customer">
+    <label for="customerName">Customer:</label>
+    <input type="text" id="customerName" placeholder="Enter customer name…">
+  </div>
+
+  <div class="upload-zone" id="uploadZone"
+    onclick="document.getElementById('fileInput').click()"
+    ondragover="handleDragOver(event)"
+    ondragleave="handleDragLeave(event)"
+    ondrop="handleDrop(event)">
+    <span class="upload-icon">📂</span>
+    <span id="uploadLabel">Drop Power BI pricing file here, or click to browse</span>
+  </div>
+  <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" onchange="handleFileSelect(event)">
+
+  <div class="header-actions">
+    <div class="export-wrap">
+      <button class="btn btn-export" onclick="toggleExportMenu(event)" id="exportBtn" disabled>⬇ Export ▾</button>
+      <div class="export-menu" id="exportMenu" style="display:none">
+        <span class="menu-label">Export options</span>
+        <label class="menu-formula-opt">
+          <input type="checkbox" id="exportFormulas">
+          <span>Include Excel formulas<small>GP% recalculates when sell price is edited</small></span>
+        </label>
+        <button onclick="exportCurrent(); closeExportMenu()">Export current tab only</button>
+        <button onclick="exportAll(); closeExportMenu()">Export all categories</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════════════════ TABS ══════════════════════════ -->
+<div class="tabs-bar">
+  <button class="tab-btn active" data-tab="spirits" onclick="switchTab('spirits')">
+    🥃 Spirits <span class="tab-count" id="cnt-spirits">0</span>
+  </button>
+  <button class="tab-btn" data-tab="wine" onclick="switchTab('wine')">
+    🍷 Wine <span class="tab-count" id="cnt-wine">0</span>
+  </button>
+  <button class="tab-btn" data-tab="beer" onclick="switchTab('beer')">
+    🍺 Beer &amp; Cider <span class="tab-count" id="cnt-beer">0</span>
+  </button>
+  <button class="tab-btn" data-tab="soft" onclick="switchTab('soft')">
+    🥤 Soft Drinks <span class="tab-count" id="cnt-soft">0</span>
+  </button>
+  <button class="tab-btn" data-tab="other" onclick="switchTab('other')">
+    📦 Other <span class="tab-count" id="cnt-other">0</span>
+  </button>
+</div>
+
+<!-- ══════════════════════════ MAIN ══════════════════════════ -->
+<div class="main">
+
+  <!-- ── SPIRITS PANEL ── -->
+  <div class="panel active" id="panel-spirits">
+    <div class="controls-bar" id="ctrl-spirits" style="display:none">
+      <div class="control-group">
+        <label>Target GP%</label>
+        <input type="number" class="ctrl-input" id="spiritsGP" value="68.5" min="0" max="99" step="0.5">
+        <span style="font-size:12px;color:var(--text-muted)">%</span>
+        <button class="btn btn-primary btn-sm" onclick="applySpiritsGP()">Apply All</button>
+      </div>
+      <div class="controls-sep"></div>
+      <div class="control-group" style="font-size:11px;color:var(--text-muted)">
+        Edit <b style="color:var(--blue)">Sell Price</b> or <b style="color:var(--green)">GP%</b> per row
+      </div>
+      <div class="controls-spacer"></div>
+      <div style="font-size:11px;color:var(--text-muted)">Prices include VAT</div>
+    </div>
+    <div class="table-wrap" id="wrap-spirits">
+      <div class="placeholder" id="ph-spirits">
+        <div class="placeholder-icon">📊</div>
+        <h3>No file loaded</h3>
+        <p>Upload a Power BI pricing file to calculate spirit serving prices.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── WINE PANEL ── -->
+  <div class="panel" id="panel-wine">
+    <div class="controls-bar" id="ctrl-wine" style="display:none">
+      <div class="control-group">
+        <label>Target GP%</label>
+        <input type="number" class="ctrl-input" id="wineGP" value="65.0" min="0" max="99" step="0.5">
+        <span style="font-size:12px;color:var(--text-muted)">%</span>
+        <button class="btn btn-primary btn-sm" onclick="applyWineGP()">Apply All</button>
+      </div>
+      <div class="controls-sep"></div>
+      <div class="control-group" style="font-size:11px;color:var(--text-muted)">
+        Edit <b style="color:var(--blue)">Sell Price</b> or <b style="color:var(--green)">GP%</b> per serve
+      </div>
+      <div class="controls-spacer"></div>
+      <div style="font-size:11px;color:var(--text-muted)">Prices include VAT · Based on 750ml bottle</div>
+    </div>
+    <div class="table-wrap" id="wrap-wine">
+      <div class="placeholder" id="ph-wine">
+        <div class="placeholder-icon">🍷</div>
+        <h3>No file loaded</h3>
+        <p>Upload a Power BI pricing file to calculate wine serving prices.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── BEER PANEL ── -->
+  <div class="panel" id="panel-beer">
+    <div class="controls-bar" id="ctrl-beer" style="display:none">
+      <div class="control-group">
+        <label>Target GP%</label>
+        <input type="number" class="ctrl-input" id="beerGP" value="65.0" min="0" max="99" step="0.5">
+        <span style="font-size:12px;color:var(--text-muted)">%</span>
+        <button class="btn btn-primary btn-sm" onclick="applyBeerGP()">Apply All</button>
+      </div>
+      <div class="controls-sep"></div>
+      <div class="control-group" style="font-size:11px;color:var(--text-muted)">
+        Edit <b style="color:var(--blue)">Sell Price</b> or <b style="color:var(--green)">GP%</b> — prices inc VAT
+      </div>
+      <div class="controls-spacer"></div>
+    </div>
+    <div class="table-wrap" id="wrap-beer">
+      <div class="placeholder" id="ph-beer">
+        <div class="placeholder-icon">🍺</div>
+        <h3>No file loaded</h3>
+        <p>Upload a Power BI pricing file to calculate beer &amp; cider selling prices.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SOFT DRINKS PANEL ── -->
+  <div class="panel" id="panel-soft">
+    <div class="controls-bar" id="ctrl-soft" style="display:none">
+      <div class="control-group">
+        <label>Target GP%</label>
+        <input type="number" class="ctrl-input" id="softGP" value="60.0" min="0" max="99" step="0.5">
+        <span style="font-size:12px;color:var(--text-muted)">%</span>
+        <button class="btn btn-primary btn-sm" onclick="applySoftGP()">Apply All</button>
+      </div>
+      <div class="controls-sep"></div>
+      <div class="control-group" style="font-size:11px;color:var(--text-muted)">
+        Edit <b style="color:var(--blue)">Sell Price</b> or <b style="color:var(--green)">GP%</b> — prices inc VAT
+      </div>
+      <div class="controls-spacer"></div>
+    </div>
+    <div class="table-wrap" id="wrap-soft">
+      <div class="placeholder" id="ph-soft">
+        <div class="placeholder-icon">🥤</div>
+        <h3>No file loaded</h3>
+        <p>Upload a Power BI pricing file to calculate soft drink selling prices.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── OTHER PANEL ── -->
+  <div class="panel" id="panel-other">
+    <div class="controls-bar" id="ctrl-other" style="display:none">
+      <div class="control-group">
+        <label>Target GP%</label>
+        <input type="number" class="ctrl-input" id="otherGP" value="60.0" min="0" max="99" step="0.5">
+        <span style="font-size:12px;color:var(--text-muted)">%</span>
+        <button class="btn btn-primary btn-sm" onclick="applyOtherGP()">Apply All</button>
+      </div>
+      <div class="controls-spacer"></div>
+    </div>
+    <div class="table-wrap" id="wrap-other">
+      <div class="placeholder" id="ph-other">
+        <div class="placeholder-icon">📦</div>
+        <h3>No file loaded</h3>
+        <p>Upload a Power BI pricing file to view other sales items.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════ STATUS BAR ══════════════════════════ -->
+<div class="status-bar">
+  <span id="statusMsg">Ready — upload a Power BI pricing file to begin</span>
+  <span class="controls-spacer"></span>
+  <span id="statusDate"></span>
+</div>
+
+<!-- ══════════════════════════ SCRIPT ══════════════════════════ -->
+<script>
+/* ─────────────── SPIRITS MEASURES LOOKUP ─────────────── */
+const MEASURES = {
+  'BOTTLE':      { m25: 28,   m35: 20,    m50: 14   },
+  '70CL':        { m25: 28,   m35: 20,    m50: 14   },
+  '1.5 LITRE':   { m25: 60,   m35: 42.8,  m50: 30   },
+  '1.0 LITRE':   { m25: 40,   m35: 29,    m50: 20   },
+  '50 CL':       { m25: 20,   m35: 14.9,  m50: 10   },
+  '20 CL':       { m25: 8,    m35: 5.7,   m50: 4    },
+  '10 CL':       { m25: 4,    m35: 2.9,   m50: 2    },
+  'MINS':        { m25: 2,    m35: 1.4,   m50: 1    },
+  '3.0 LITRE':   { m25: 120,  m35: 87,    m50: 60   },
+  'HALF-BOT':    { m25: 14,   m35: 10,    m50: 7    },
+  '15 CL':       { m25: 6,    m35: 4.3,   m50: 3    },
+  '12 CL':       { m25: 4.8,  m35: 4.2,   m50: 2.4  },
+  '5.0 LITRE':   { m25: 200,  m35: 142,   m50: 100  },
+  '1.75 LITRE':  { m25: 70,   m35: 50,    m50: 35   },
+  '6 X 35CL':    { m25: 84,   m35: 60,    m50: 42   },
+  '4.5L ETOTE':  { m25: 180,  m35: 128,   m50: 90   },
+  '12 x 35 CL':  { m25: 168,  m35: 120,   m50: 84   },
+  '10 LTR BIB':  { m25: 84,   m35: 84,    m50: 84   },
+  'HOGSHEAD':    { m25: 10000, m35: 7142, m50: 20000 },
+};
+
+/* Wine serves from a 750ml bottle */
+const WINE_750_SERVES = { g125: 6, g175: 750/175, g250: 3 };
+
+/* Wine display groups — order defines display order */
+const WINE_GROUPS_ORDER = ['White', 'Rosé', 'Red', 'Dessert', 'Prosecco, Champagne & Other Sparkling', 'Zero / Low Alcohol'];
+const FORTIFIED_GROUP_LABEL = 'Fortified, Port, Sherry & Other';
+
+/**
+ * Parse IM sub-category in "Country-Colour" format (e.g. "Romania-White", "New Zealand-Red").
+ * Returns { country, colour } — colour is the part used for wine group mapping.
+ * If the format isn't recognised, country is '' and colour is the full subCat string.
+ */
+const WINE_COLOUR_WORDS = new Set(['white','red','rose','rosé','sparkling','champagne','prosecco',
+  'dessert','fortified','sherry','port','vermouth','tonic','zero','low alcohol','alcohol free']);
+
+function parseWineSubCat(subCat) {
+  const dashIdx = subCat.lastIndexOf('-');
+  if (dashIdx > 0) {
+    const potColour = subCat.substring(dashIdx + 1).trim().toLowerCase();
+    // Only treat as Country-Colour if the right-hand part is a known wine colour word
+    if (WINE_COLOUR_WORDS.has(potColour) || /^(white|red|ros|spark|pro)/.test(potColour)) {
+      return { country: subCat.substring(0, dashIdx).trim(), colour: subCat.substring(dashIdx + 1).trim() };
+    }
+  }
+  return { country: '', colour: subCat };
+}
+
+function getWineGroup(colourStr, fallback) {
+  const s = (colourStr || '').toLowerCase();
+  if (s.includes('prosecco'))                                                              return 'Prosecco, Champagne & Other Sparkling';
+  if (s.includes('champagne') || s.includes('cava') || s.includes('cremant'))             return 'Prosecco, Champagne & Other Sparkling';
+  if (s.includes('sparkling'))                                                             return 'Prosecco, Champagne & Other Sparkling';
+  if (s.includes('ros'))                                                                   return 'Rosé';
+  if (s.includes('dessert') || s.includes('sweet') || s.includes('botrytis'))             return 'Dessert';
+  if (s.includes('red') || s.includes('rouge') || s.includes('tinto') || s.includes('rosso')) return 'Red';
+  if (s.includes('white') || s.includes('blanc') || s.includes('bianco'))                 return 'White';
+  if (s.includes('zero') || s.includes('low alc') || s.includes('alcohol free') || s.includes('non-alc')) return 'Zero / Low Alcohol';
+  if (s.includes('port') || s.includes('sherry') || s.includes('vermouth') ||
+      s.includes('fortif') || s.includes('tonic'))                                        return FORTIFIED_GROUP_LABEL;
+  return fallback || null;
+}
+
+/* ─────────────── STATE ─────────────── */
+let spiritsData     = [];
+let stillWineData   = [];
+let sparkWineData   = [];
+let beerData        = [];
+let softData        = [];
+let otherData       = [];
+
+/* Tracks sub-categories with custom GP% targets: key = "tab:groupKey" */
+const customSubcats = {};
+function markCustomSubcat(tab, key)        { customSubcats[tab + ':' + key] = true; }
+function clearCustomSubcats(tab)           { Object.keys(customSubcats).filter(k => k.startsWith(tab + ':')).forEach(k => delete customSubcats[k]); }
+function hasCustomSubcats(tab)             { return Object.keys(customSubcats).some(k => k.startsWith(tab + ':')); }
+function resetAllCustomSubcats()           { Object.keys(customSubcats).forEach(k => delete customSubcats[k]); }
+
+/* ─────────────── HELPERS ─────────────── */
+const r2 = v => Math.round(v * 100) / 100;
+const r4 = v => Math.round(v * 10000) / 10000;
+
+function getMeasures(size) {
+  if (!size) return null;
+  return MEASURES[size.trim().toUpperCase()] || MEASURES[size.trim()] || null;
+}
+
+function parseUnitsFromFormat(format) {
+  if (!format) return null;
+  const m = format.match(/^(\d+)\s*[xX×]/);
+  return m ? parseInt(m[1]) : null;
+}
+
+/** Extract litres from a keg format string: "KEG 50L" → 50, "KEG 30L" → 30, "KEG 9G" → 40.9 */
+function parseKegLitres(sizeStr) {
+  if (!sizeStr) return null;
+  const s = sizeStr.toUpperCase();
+  const lm = s.match(/(\d+(?:\.\d+)?)\s*L/);
+  if (lm) return parseFloat(lm[1]);
+  const gm = s.match(/(\d+(?:\.\d+)?)\s*G/);  // UK gallons
+  if (gm) return parseFloat(gm[1]) * 4.54609;
+  return null;
+}
+
+const PINT_ML = 568; // 1 UK pint in ml
+
+function sellFromGP(cost, gp) {
+  if (!gp || gp >= 1) return null;
+  return cost / (1 - gp);
+}
+function gpFromSell(cost, sell) {
+  if (!sell || sell <= 0) return null;
+  return (sell - cost) / sell;
+}
+
+function isStdBottle(size) {
+  return size.trim().toUpperCase() === 'BOTTLE';
+}
+
+function calcBottleCost(unitPrice, packSize, size) {
+  if (packSize === 1) {
+    const units = parseUnitsFromFormat(size);
+    return { costPerUnit: units ? unitPrice / units : unitPrice, unitsPerCase: units };
+  }
+  return { costPerUnit: unitPrice, unitsPerCase: packSize };
+}
+
+/* ─────────────── FILE HANDLING ─────────────── */
+function handleDragOver(e) { e.preventDefault(); document.getElementById('uploadZone').classList.add('drag-over'); }
+function handleDragLeave()  { document.getElementById('uploadZone').classList.remove('drag-over'); }
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+function handleFileSelect(e) { const file = e.target.files[0]; if (file) processFile(file); }
+
+function processFile(file) {
+  document.getElementById('uploadLabel').textContent = '⏳ Reading ' + file.name + '…';
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const wb   = XLSX.read(ev.target.result, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      parseRows(rows);
+      document.getElementById('uploadLabel').textContent = '✔ ' + file.name;
+      document.getElementById('uploadZone').classList.add('loaded');
+      document.getElementById('exportBtn').disabled = false;
+    } catch(err) {
+      alert('Could not read file: ' + err.message);
+      document.getElementById('uploadLabel').textContent = 'Drop Power BI pricing file here, or click to browse';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ─────────────── DATA PARSING ─────────────── */
+function parseRows(rows) {
+  let hIdx = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i] && rows[i][0] === 'Product Code') { hIdx = i; break; }
+  }
+  if (hIdx === -1) {
+    alert('Could not find data headers.\nExpected a row beginning with "Product Code".');
+    return;
+  }
+
+  spiritsData = []; stillWineData = []; sparkWineData = [];
+  beerData = []; softData = []; otherData = [];
+  resetAllCustomSubcats();
+
+  const gpSpirits  = parseFloat(document.getElementById('spiritsGP').value) / 100 || 0.685;
+  const gpWine     = parseFloat(document.getElementById('wineGP').value)    / 100 || 0.65;
+  const gpBeer     = parseFloat(document.getElementById('beerGP').value)    / 100 || 0.65;
+  const gpSoft     = parseFloat(document.getElementById('softGP').value)    / 100 || 0.60;
+  const gpOther    = parseFloat(document.getElementById('otherGP').value)   / 100 || 0.60;
+
+  for (let i = hIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row[0]) continue;
+
+    const code      = (row[0] || '').toString().trim();
+    const category  = (row[1] || '').toString().trim();
+    const subCat    = (row[2] || '').toString().trim();
+    const desc      = (row[3] || '').toString().trim();
+    const size      = (row[4] || '').toString().trim();
+    const packSize  = parseFloat(row[5]) || 1;
+    const unitPrice = parseFloat(row[12]) || 0;
+
+    if (!code || !category || unitPrice <= 0) continue;
+
+    const cat = category.toLowerCase();
+
+    /* ── SPIRITS ── */
+    if (cat === 'spirits') {
+      const costIncVAT = unitPrice * 1.2;
+      const meas = getMeasures(size);
+      const cp25 = meas ? costIncVAT / meas.m25 : null;
+      const cp35 = meas ? costIncVAT / meas.m35 : null;
+      const cp50 = meas ? costIncVAT / meas.m50 : null;
+      spiritsData.push({
+        code, subCat, name: desc, size, unitPrice, costIncVAT, meas,
+        costPer25: cp25, costPer35: cp35, costPer50: cp50,
+        gp25: gpSpirits, sell25: cp25 ? r2(sellFromGP(cp25, gpSpirits)) : null,
+        gp35: gpSpirits, sell35: cp35 ? r2(sellFromGP(cp35, gpSpirits)) : null,
+        gp50: gpSpirits, sell50: cp50 ? r2(sellFromGP(cp50, gpSpirits)) : null,
+      });
+
+    /* ── STILL WINE ── */
+    } else if (cat === 'still wine') {
+      const { costPerUnit, unitsPerCase } = calcBottleCost(unitPrice, packSize, size);
+      const civ = costPerUnit * 1.2;
+      const bottle = isStdBottle(size);
+      const cp125 = bottle ? civ / WINE_750_SERVES.g125 : null;
+      const cp175 = bottle ? civ / WINE_750_SERVES.g175 : null;
+      const cp250 = bottle ? civ / WINE_750_SERVES.g250 : null;
+      const swParsed = parseWineSubCat(subCat);
+      const swGroup  = getWineGroup(swParsed.colour, 'White') || 'White';
+      stillWineData.push({
+        code, subCat, name: desc, size, unitPrice: costPerUnit, costIncVAT: civ, unitsPerCase,
+        isBottle: bottle,
+        wineGroup: swGroup,
+        country: swParsed.country,
+        costPer125: cp125, costPer175: cp175, costPer250: cp250,
+        gp125:  gpWine, sell125:  cp125 ? r2(sellFromGP(cp125, gpWine)) : null,
+        gp175:  gpWine, sell175:  cp175 ? r2(sellFromGP(cp175, gpWine)) : null,
+        gp250:  gpWine, sell250:  cp250 ? r2(sellFromGP(cp250, gpWine)) : null,
+        gpBottle: gpWine, sellBottle: r2(sellFromGP(civ, gpWine)),
+      });
+
+    /* ── SPARKLING WINE ── */
+    } else if (cat === 'sparkling wine') {
+      const { costPerUnit, unitsPerCase } = calcBottleCost(unitPrice, packSize, size);
+      const civ = costPerUnit * 1.2;
+      const bottle = isStdBottle(size);
+      const cp125 = bottle ? civ / WINE_750_SERVES.g125 : null;
+      const spParsed = parseWineSubCat(subCat);
+      const spGroup  = getWineGroup(spParsed.colour, 'Prosecco, Champagne & Other Sparkling') || 'Prosecco, Champagne & Other Sparkling';
+      sparkWineData.push({
+        code, subCat, name: desc, size, unitPrice: costPerUnit, costIncVAT: civ, unitsPerCase,
+        isBottle: bottle,
+        wineGroup: spGroup,
+        country: spParsed.country,
+        costPer125: cp125,
+        gp125:   gpWine, sell125:   cp125 ? r2(sellFromGP(cp125, gpWine)) : null,
+        gpBottle: gpWine, sellBottle: r2(sellFromGP(civ, gpWine)),
+      });
+
+    /* ── BEER ── */
+    } else if (cat === 'beer') {
+      const { costPerUnit, unitsPerCase } = calcBottleCost(unitPrice, packSize, size);
+      const civ = costPerUnit * 1.2;
+      const isKeg = /KEG/i.test(size);
+      if (isKeg) {
+        const litres       = parseKegLitres(size);
+        const pintsPerKeg  = litres ? Math.round((litres * 1000 / PINT_ML) * 100) / 100 : null;
+        const costPerPint  = pintsPerKeg ? civ / pintsPerKeg : null;
+        const costPerHalf  = costPerPint  ? costPerPint / 2   : null;
+        beerData.push({
+          code, subCat, name: desc, size, isKeg: true,
+          litres, pintsPerKeg, kegCostIncVAT: civ,
+          costPerPint, costPerHalf,
+          gpPint:  gpBeer, sellPint:  costPerPint ? r2(sellFromGP(costPerPint,  gpBeer)) : null,
+          gpHalf:  gpBeer, sellHalf:  costPerHalf ? r2(sellFromGP(costPerHalf,  gpBeer)) : null,
+        });
+      } else {
+        beerData.push({ code, subCat, name: desc, size, costIncVAT: civ, unitsPerCase,
+                        gp: gpBeer, sell: r2(sellFromGP(civ, gpBeer)) });
+      }
+
+    /* ── SOFT ── */
+    } else if (cat === 'soft') {
+      const { costPerUnit, unitsPerCase } = calcBottleCost(unitPrice, packSize, size);
+      const civ = costPerUnit * 1.2;
+      softData.push({ code, subCat, name: desc, size, costIncVAT: civ, unitsPerCase,
+                      gp: gpSoft, sell: r2(sellFromGP(civ, gpSoft)) });
+
+    /* ── OTHER ── */
+    } else {
+      const { costPerUnit, unitsPerCase } = calcBottleCost(unitPrice, packSize, size);
+      const civ = costPerUnit * 1.2;
+      otherData.push({ code, subCat, name: desc, size, costIncVAT: civ, unitsPerCase,
+                       gp: gpOther, sell: r2(sellFromGP(civ, gpOther)), rawCat: category });
+    }
+  }
+
+  updateCounts();
+  renderSpirits();
+  renderWine();
+  renderBeerTab();
+  renderBottleTab('soft');
+  renderBottleTab('other');
+  setStatus(`Loaded: ${spiritsData.length} spirits · ${stillWineData.length + sparkWineData.length} wine · ${beerData.length} beer · ${softData.length} soft drinks · ${otherData.length} other`);
+}
+
+/* ─────────────── COUNTS ─────────────── */
+function updateCounts() {
+  document.getElementById('cnt-spirits').textContent = spiritsData.length;
+  document.getElementById('cnt-wine').textContent    = stillWineData.length + sparkWineData.length;
+  document.getElementById('cnt-beer').textContent    = beerData.length;
+  document.getElementById('cnt-soft').textContent    = softData.length;
+  document.getElementById('cnt-other').textContent   = otherData.length;
+}
+
+/* ─────────────── UTILITY ─────────────── */
+
+/** Remove the rendered table/sections from a wrap div without touching the placeholder. */
+function clearRendered(wrap) {
+  wrap.querySelectorAll('.table-center, .wine-sections').forEach(el => el.remove());
+}
+
+function groupBy(arr, key) {
+  const out = {};
+  for (const item of arr) {
+    const k = item[key] || '—';
+    if (!out[k]) out[k] = [];
+    out[k].push(item);
+  }
+  return out;
+}
+
+function wrapInCard(tbl) {
+  const center = document.createElement('div');
+  center.className = 'table-center';
+  const card = document.createElement('div');
+  card.className = 'table-card';
+  card.appendChild(tbl);
+  center.appendChild(card);
+  return center;
+}
+
+/* ─────────────── RENDER: SPIRITS ─────────────── */
+function renderSpirits() {
+  const ph   = document.getElementById('ph-spirits');
+  const wrap = document.getElementById('wrap-spirits');
+  const ctrl = document.getElementById('ctrl-spirits');
+
+  if (spiritsData.length === 0) {
+    ph.style.display = 'flex'; ctrl.style.display = 'none';
+    clearRendered(wrap); return;
+  }
+  ph.style.display = 'none'; ctrl.style.display = 'flex';
+
+  const groups = groupBy(spiritsData, 'subCat');
+  const tbl = document.createElement('table');
+  tbl.id = 'spiritsTable';
+
+  const thead = tbl.createTHead();
+  const tr1   = thead.insertRow();
+  const tr2   = thead.insertRow();
+
+  function th1(label, rowspan, cls='') {
+    const c = document.createElement('th');
+    c.rowSpan = rowspan; c.textContent = label;
+    if (cls) c.className = cls; return c;
+  }
+  function thGroup(label, colspan, gCls) {
+    const c = document.createElement('th');
+    c.colSpan = colspan; c.textContent = label;
+    c.className = 'th-group ' + gCls; return c;
+  }
+  function th2(label, cls='') {
+    const c = document.createElement('th');
+    c.textContent = label; if (cls) c.className = cls; return c;
+  }
+
+  tr1.appendChild(th1('Code',      2, 'col-left cw-code'));
+  tr1.appendChild(th1('Product',   2, 'col-left'));
+  tr1.appendChild(th1('Size',      2, 'col-left cw-size'));
+  tr1.appendChild(th1('IM Unit £', 2, 'cw-unit'));
+  tr1.appendChild(thGroup('25ml Serve', 2, 'g25'));
+  tr1.appendChild(thGroup('35ml Serve', 2, 'g35'));
+  tr1.appendChild(thGroup('50ml Serve', 2, 'g50'));
+
+  tr2.appendChild(th2('Sell £', 'g25 cw-sell'));
+  tr2.appendChild(th2('GP %',   'g25 cw-gp'));
+  tr2.appendChild(th2('Sell £', 'g35 cw-sell'));
+  tr2.appendChild(th2('GP %',   'g35 cw-gp'));
+  tr2.appendChild(th2('Sell £', 'g50 cw-sell'));
+  tr2.appendChild(th2('GP %',   'g50 cw-gp'));
+
+  const tbody = tbl.createTBody();
+  for (const [subCat, items] of Object.entries(groups)) {
+    addSubcatRow(tbody, subCat, 10, { tab:'spirits', groupKey:subCat, defaultGP: items[0]?.gp25 });
+    for (const item of items) {
+      const idx = spiritsData.indexOf(item);
+      const row = tbody.insertRow();
+      row.insertCell().outerHTML = `<td class="td-code">${item.code}</td>`;
+      row.insertCell().outerHTML = `<td class="td-name" title="${item.name}">${item.name}</td>`;
+      row.insertCell().outerHTML = `<td>${item.size}</td>`;
+      row.insertCell().outerHTML = `<td class="td-num">£${item.unitPrice.toFixed(2)}</td>`;
+      if (!item.meas) {
+        const w = row.insertCell(); w.colSpan = 6;
+        w.className = 'warn td-center';
+        w.textContent = 'No measure data for "' + item.size + '"';
+      } else {
+        appendServeCell(row, idx, '25');  appendGPCell(row, idx, '25');
+        appendServeCell(row, idx, '35');  appendGPCell(row, idx, '35');
+        appendServeCell(row, idx, '50');  appendGPCell(row, idx, '50');
+      }
+    }
+  }
+
+  clearRendered(wrap);
+  wrap.appendChild(wrapInCard(tbl));
+}
+
+function appendServeCell(row, idx, size) {
+  const td = row.insertCell(); td.className = 'editable sell';
+  const item = spiritsData[idx];
+  const inp = mkInput('number', '0.05', item['sell' + size]?.toFixed(2) ?? '',
+                      { idx, size, field: 'sell' });
+  inp.addEventListener('change', onSpiritCellChange);
+  td.appendChild(inp);
+}
+function appendGPCell(row, idx, size) {
+  const td = row.insertCell(); td.className = 'editable gp';
+  const item = spiritsData[idx];
+  const gp = item['gp' + size];
+  const inp = mkInput('number', '0.5', gp != null ? (gp * 100).toFixed(1) : '',
+                      { idx, size, field: 'gp' });
+  inp.addEventListener('change', onSpiritCellChange);
+  td.appendChild(inp);
+}
+
+function onSpiritCellChange(e) {
+  const inp = e.target;
+  const idx = parseInt(inp.dataset.idx), size = inp.dataset.size, field = inp.dataset.field;
+  const item = spiritsData[idx];
+  const cost = item['costPer' + size]; if (!cost) return;
+  if (field === 'sell') {
+    const v = parseFloat(inp.value); if (isNaN(v) || v <= 0) return;
+    item['sell' + size] = r2(v);
+    item['gp'   + size] = r4(gpFromSell(cost, v));
+    syncSpiritSibling(idx, size, 'gp', (item['gp' + size] * 100).toFixed(1));
+  } else {
+    const v = parseFloat(inp.value) / 100; if (isNaN(v) || v >= 1 || v < 0) return;
+    item['gp'   + size] = r4(v);
+    item['sell' + size] = r2(sellFromGP(cost, v));
+    syncSpiritSibling(idx, size, 'sell', item['sell' + size].toFixed(2));
+  }
+}
+function syncSpiritSibling(idx, size, field, val) {
+  document.querySelectorAll(`#spiritsTable input[data-idx="${idx}"][data-size="${size}"][data-field="${field}"]`)
+    .forEach(i => { i.value = val; });
+}
+
+/* ─────────────── APPLY ALL (SPIRITS) ─────────────── */
+function applySpiritsGP() {
+  const gp = parseFloat(document.getElementById('spiritsGP').value) / 100;
+  if (isNaN(gp) || gp <= 0 || gp >= 1) return;
+  if (hasCustomSubcats('spirits')) {
+    if (!confirm('This will override any sub-category GP% targets you have set.\n\nDo you wish to continue?')) return;
+    clearCustomSubcats('spirits');
+  }
+  for (const item of spiritsData) {
+    for (const s of ['25','35','50']) {
+      const cost = item['costPer' + s]; if (!cost) continue;
+      item['gp'   + s] = gp;
+      item['sell' + s] = r2(sellFromGP(cost, gp));
+    }
+  }
+  renderSpirits();
+}
+
+/* ─────────────── RENDER: WINE (unified — grouped by type, sorted by price) ─────────────── */
+function renderWine() {
+  const ph   = document.getElementById('ph-wine');
+  const wrap = document.getElementById('wrap-wine');
+  const ctrl = document.getElementById('ctrl-wine');
+  const total = stillWineData.length + sparkWineData.length;
+
+  if (total === 0) {
+    ph.style.display = 'flex'; ctrl.style.display = 'none';
+    clearRendered(wrap); return;
+  }
+  ph.style.display = 'none'; ctrl.style.display = 'flex';
+
+  // Build view items (references into the source arrays)
+  const allWine = [
+    ...stillWineData.map((it, i) => ({ item: it, wtype: 'still', idx: i })),
+    ...sparkWineData.map((it, i) => ({ item: it, wtype: 'spark', idx: i })),
+  ];
+
+  // Split into: still colour groups | sparkling group | fortified | other
+  const SPARK_GROUP  = 'Prosecco, Champagne & Other Sparkling';
+  const STILL_GROUPS = WINE_GROUPS_ORDER.filter(g => g !== SPARK_GROUP);
+
+  const grouped     = {};
+  for (const g of WINE_GROUPS_ORDER) grouped[g] = [];
+  const fortified   = {}; // keyed by subCat
+  const otherGroups = {};
+
+  for (const vi of allWine) {
+    const g = vi.item.wineGroup || 'White';
+    if (g === FORTIFIED_GROUP_LABEL) {
+      const sc = vi.item.subCat; if (!fortified[sc]) fortified[sc] = []; fortified[sc].push(vi);
+    } else if (grouped[g] !== undefined) {
+      grouped[g].push(vi);
+    } else {
+      if (!otherGroups[g]) otherGroups[g] = []; otherGroups[g].push(vi);
+    }
+  }
+
+  // Sort each group by price low → high
+  const byPrice = (a, b) => a.item.costIncVAT - b.item.costIncVAT;
+  for (const g of WINE_GROUPS_ORDER) grouped[g].sort(byPrice);
+  for (const items of Object.values(otherGroups)) items.sort(byPrice);
+  for (const items of Object.values(fortified)) items.sort(byPrice);
+
+  // ── Shared header builders (available to all three table builders below) ──
+  function th1(text, rowspan, cls='') {
+    const c = document.createElement('th');
+    c.rowSpan = rowspan; c.textContent = text; if (cls) c.className = cls; return c;
+  }
+  function thG(text, colspan, gCls) {
+    const c = document.createElement('th');
+    c.colSpan = colspan; c.textContent = text; c.className = 'th-group ' + gCls; return c;
+  }
+  function th2(text, cls='') {
+    const c = document.createElement('th'); c.textContent = text; if (cls) c.className = cls; return c;
+  }
+
+  // ── Country cell helper ──
+  function mkCountryCell(row, item) {
+    const td = row.insertCell(); td.style.padding = '0';
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = item.country || ''; inp.placeholder = '—';
+    Object.assign(inp.style, { width:'100%', border:'none', background:'transparent',
+      padding:'5px 8px', fontSize:'15px', fontFamily:'var(--font)', color:'var(--text-body)' });
+    inp.addEventListener('change', e => { item.country = e.target.value.trim(); });
+    inp.addEventListener('focus', e => { e.target.style.background='white'; e.target.style.outline='2px solid var(--accent)'; e.target.style.outlineOffset='-2px'; });
+    inp.addEventListener('blur',  e => { e.target.style.background='transparent'; e.target.style.outline=''; });
+    td.appendChild(inp);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // TABLE 1 — Still wine: White / Rosé / Red / Dessert / Zero
+  // Cols (13): Code | Country | Product | IM£ex | IM£inc | 125 Sell|GP | 175 Sell|GP | 250 Sell|GP | Btl Sell|GP
+  // ════════════════════════════════════════════════════════
+  const NCOLS = 13;
+  const tbl = document.createElement('table');
+  tbl.id = 'wineTable';
+  const thead = tbl.createTHead();
+  const tr1 = thead.insertRow(), tr2 = thead.insertRow();
+
+  tr1.appendChild(th1('Code',         2, 'col-left cw-code'));
+  tr1.appendChild(th1('Country',      2, 'col-left'));
+  tr1.appendChild(th1('Product',      2, 'col-left'));
+  tr1.appendChild(th1('IM £ ex-VAT',  2, 'cw-unit'));
+  tr1.appendChild(th1('IM £ inc-VAT', 2, 'cw-unit'));
+  tr1.appendChild(thG('125ml Glass', 2, 'g125'));
+  tr1.appendChild(thG('175ml Glass', 2, 'g175'));
+  tr1.appendChild(thG('250ml Glass', 2, 'g250'));
+  tr1.appendChild(thG('Bottle',      2, 'gbtl'));
+  for (const [cls, isGP] of [
+    ['g125 cw-sell',false],['g125 cw-gp',true],
+    ['g175 cw-sell',false],['g175 cw-gp',true],
+    ['g250 cw-sell',false],['g250 cw-gp',true],
+    ['gbtl cw-sell',false],['gbtl cw-gp',true],
+  ]) { tr2.appendChild(th2(isGP ? 'GP %' : 'Sell £', cls)); }
+
+  const tbody = tbl.createTBody();
+  function addStillGroup(groupLabel, viewItems) {
+    if (viewItems.length === 0) return;
+    addSubcatRow(tbody, groupLabel, NCOLS, { tab:'wine', groupKey:groupLabel, defaultGP: viewItems[0]?.item.gpBottle });
+    for (const vi of viewItems) {
+      const { item, wtype, idx } = vi;
+      const row = tbody.insertRow();
+      row.insertCell().outerHTML = `<td class="td-code">${item.code}</td>`;
+      mkCountryCell(row, item);
+      row.insertCell().outerHTML = `<td class="td-name" title="${item.name}">${item.name}</td>`;
+      row.insertCell().outerHTML = `<td class="td-num">£${item.unitPrice.toFixed(2)}</td>`;
+      row.insertCell().outerHTML = `<td class="td-num cost-cell">£${item.costIncVAT.toFixed(2)}</td>`;
+      for (const measure of ['125','175','250','Bottle']) {
+        appendWineServeCell(row, idx, measure, wtype);
+        appendWineGPCell(row, idx, measure, wtype);
+      }
+    }
+  }
+  for (const g of STILL_GROUPS) addStillGroup(g, grouped[g]);
+  for (const [g, items] of Object.entries(otherGroups)) addStillGroup(g, items);
+
+  // ════════════════════════════════════════════════════════
+  // TABLE 2 — Sparkling: Prosecco, Champagne & Other Sparkling
+  // Cols (9): Code | Country | Product | IM£ex | IM£inc | 125 Sell|GP | Btl Sell|GP
+  // ════════════════════════════════════════════════════════
+  const sparkItems = grouped[SPARK_GROUP] || [];
+  const stbl = document.createElement('table');
+  stbl.id = 'sparkTable';
+  const shead = stbl.createTHead();
+  const str1 = shead.insertRow(), str2 = shead.insertRow();
+  const SNCOLS = 9;
+
+  str1.appendChild(th1('Code',         2, 'col-left cw-code'));
+  str1.appendChild(th1('Country',      2, 'col-left'));
+  str1.appendChild(th1('Product',      2, 'col-left'));
+  str1.appendChild(th1('IM £ ex-VAT',  2, 'cw-unit'));
+  str1.appendChild(th1('IM £ inc-VAT', 2, 'cw-unit'));
+  str1.appendChild(thG('125ml Glass', 2, 'g125'));
+  str1.appendChild(thG('Bottle',      2, 'gbtl'));
+  for (const [cls, isGP] of [
+    ['g125 cw-sell',false],['g125 cw-gp',true],
+    ['gbtl cw-sell',false],['gbtl cw-gp',true],
+  ]) { str2.appendChild(th2(isGP ? 'GP %' : 'Sell £', cls)); }
+
+  const stbody = stbl.createTBody();
+  if (sparkItems.length > 0) {
+    addSubcatRow(stbody, SPARK_GROUP, SNCOLS, { tab:'wine', groupKey:SPARK_GROUP, defaultGP: sparkItems[0]?.item.gpBottle });
+    for (const vi of sparkItems) {
+      const { item, wtype, idx } = vi;
+      const srow = stbody.insertRow();
+      srow.insertCell().outerHTML = `<td class="td-code">${item.code}</td>`;
+      mkCountryCell(srow, item);
+      srow.insertCell().outerHTML = `<td class="td-name" title="${item.name}">${item.name}</td>`;
+      srow.insertCell().outerHTML = `<td class="td-num">£${item.unitPrice.toFixed(2)}</td>`;
+      srow.insertCell().outerHTML = `<td class="td-num cost-cell">£${item.costIncVAT.toFixed(2)}</td>`;
+      appendWineServeCell(srow, idx, '125',    wtype);
+      appendWineGPCell(srow,    idx, '125',    wtype);
+      appendWineServeCell(srow, idx, 'Bottle', wtype);
+      appendWineGPCell(srow,    idx, 'Bottle', wtype);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════
+  // TABLE 3 — Fortified, Port, Sherry & Other  (no country; grouped by sub-category)
+  // Cols (13): Code | Product | Size | IM£ex | IM£inc | 125 Sell|GP | 175 Sell|GP | 250 Sell|GP | Btl Sell|GP
+  // ════════════════════════════════════════════════════════
+  const outer = document.createElement('div');
+  outer.className = 'wine-sections';
+  outer.appendChild(wrapInCard(tbl));
+  if (sparkItems.length > 0) outer.appendChild(wrapInCard(stbl));
+
+  if (Object.values(fortified).some(arr => arr.length > 0)) {
+    const FNCOLS = 13;
+    const ftbl = document.createElement('table');
+    ftbl.id = 'fortifiedTable';
+    const fhead = ftbl.createTHead();
+    const ftr1 = fhead.insertRow(), ftr2 = fhead.insertRow();
+
+    ftr1.appendChild(th1('Code',         2, 'col-left cw-code'));
+    ftr1.appendChild(th1('Product',      2, 'col-left'));
+    ftr1.appendChild(th1('Size',         2, 'col-left cw-size'));
+    ftr1.appendChild(th1('IM £ ex-VAT',  2, 'cw-unit'));
+    ftr1.appendChild(th1('IM £ inc-VAT', 2, 'cw-unit'));
+    ftr1.appendChild(thG('125ml Glass', 2, 'g125'));
+    ftr1.appendChild(thG('175ml Glass', 2, 'g175'));
+    ftr1.appendChild(thG('250ml Glass', 2, 'g250'));
+    ftr1.appendChild(thG('Bottle',      2, 'gbtl'));
+    for (const [cls, isGP] of [
+      ['g125 cw-sell',false],['g125 cw-gp',true],
+      ['g175 cw-sell',false],['g175 cw-gp',true],
+      ['g250 cw-sell',false],['g250 cw-gp',true],
+      ['gbtl cw-sell',false],['gbtl cw-gp',true],
+    ]) { ftr2.appendChild(th2(isGP ? 'GP %' : 'Sell £', cls)); }
+
+    const ftbody = ftbl.createTBody();
+    for (const [subCat, viewItems] of Object.entries(fortified)) {
+      if (viewItems.length === 0) continue;
+      addSubcatRow(ftbody, subCat, FNCOLS, { tab:'wine', groupKey: FORTIFIED_GROUP_LABEL + ':' + subCat, defaultGP: viewItems[0]?.item.gpBottle });
+      for (const vi of viewItems) {
+        const { item, wtype, idx } = vi;
+        const frow = ftbody.insertRow();
+        frow.insertCell().outerHTML = `<td class="td-code">${item.code}</td>`;
+        frow.insertCell().outerHTML = `<td class="td-name" title="${item.name}">${item.name}</td>`;
+        frow.insertCell().outerHTML = `<td>${item.size}</td>`;
+        frow.insertCell().outerHTML = `<td class="td-num">£${item.unitPrice.toFixed(2)}</td>`;
+        frow.insertCell().outerHTML = `<td class="td-num cost-cell">£${item.costIncVAT.toFixed(2)}</td>`;
+        for (const measure of ['125','175','250','Bottle']) {
+          appendWineServeCell(frow, idx, measure, wtype);
+          appendWineGPCell(frow, idx, measure, wtype);
+        }
+      }
+    }
+
+    const fsectionWrap = document.createElement('div');
+    fsectionWrap.className = 'wine-section-wrap';
+    const flbl = document.createElement('div');
+    flbl.className = 'wine-section-label'; flbl.textContent = FORTIFIED_GROUP_LABEL;
+    const fcard = document.createElement('div'); fcard.className = 'table-card';
+    fcard.appendChild(ftbl);
+    fsectionWrap.appendChild(flbl);
+    fsectionWrap.appendChild(fcard);
+    outer.appendChild(fsectionWrap);
+  }
+
+  clearRendered(wrap);
+  wrap.appendChild(outer);
+}
+
+function getWineItem(wtype, idx) {
+  return wtype === 'still' ? stillWineData[idx] : sparkWineData[idx];
+}
+
+function appendWineServeCell(row, idx, measure, wtype) {
+  const td   = row.insertCell();
+  const item = getWineItem(wtype, idx);
+  const isGlass = measure !== 'Bottle';
+  // Block glass measures for non-standard bottle sizes;
+  // also block 175ml / 250ml for sparkling (only 125ml glass + bottle)
+  const blocked = (isGlass && !item.isBottle) ||
+                  (wtype === 'spark' && (measure === '175' || measure === '250'));
+  if (blocked) {
+    td.style.textAlign = 'center'; td.style.color = 'var(--text-muted)'; td.textContent = '—'; return;
+  }
+  td.className = 'editable sell';
+  const mKey = measure === 'Bottle' ? 'sellBottle' : 'sell' + measure;
+  const inp  = mkInput('number', '0.05', item[mKey]?.toFixed(2) ?? '', { idx, measure, wtype, field: 'sell' });
+  inp.addEventListener('change', onWineCellChange);
+  td.appendChild(inp);
+}
+
+function appendWineGPCell(row, idx, measure, wtype) {
+  const td   = row.insertCell();
+  const item = getWineItem(wtype, idx);
+  const isGlass = measure !== 'Bottle';
+  const blocked = (isGlass && !item.isBottle) ||
+                  (wtype === 'spark' && (measure === '175' || measure === '250'));
+  if (blocked) {
+    td.style.textAlign = 'center'; td.style.color = 'var(--text-muted)'; td.textContent = '—'; return;
+  }
+  td.className = 'editable gp';
+  const gpKey = measure === 'Bottle' ? 'gpBottle' : 'gp' + measure;
+  const gp    = item[gpKey];
+  const inp   = mkInput('number', '0.5', gp != null ? (gp * 100).toFixed(1) : '', { idx, measure, wtype, field: 'gp' });
+  inp.addEventListener('change', onWineCellChange);
+  td.appendChild(inp);
+}
+
+function onWineCellChange(e) {
+  const inp = e.target;
+  const { idx: idxStr, measure, wtype, field } = inp.dataset;
+  const idx  = parseInt(idxStr);
+  const item = getWineItem(wtype, idx);
+  const isBottle = measure === 'Bottle';
+
+  let cost;
+  if (isBottle) {
+    cost = item.costIncVAT;
+  } else {
+    const cKey = 'costPer' + measure;
+    cost = item[cKey];
+    if (!cost) return;
+  }
+
+  const sellKey = isBottle ? 'sellBottle' : 'sell' + measure;
+  const gpKey   = isBottle ? 'gpBottle'   : 'gp'   + measure;
+  const tblId   = 'wineTable';
+
+  if (field === 'sell') {
+    const v = parseFloat(inp.value); if (isNaN(v) || v <= 0) return;
+    item[sellKey] = r2(v);
+    item[gpKey]   = r4(gpFromSell(cost, v));
+    syncWineSibling(tblId, idx, measure, wtype, 'gp', (item[gpKey] * 100).toFixed(1));
+  } else {
+    const v = parseFloat(inp.value) / 100; if (isNaN(v) || v >= 1 || v < 0) return;
+    item[gpKey]   = r4(v);
+    item[sellKey] = r2(sellFromGP(cost, v));
+    syncWineSibling(tblId, idx, measure, wtype, 'sell', item[sellKey].toFixed(2));
+  }
+}
+
+function syncWineSibling(tblId, idx, measure, wtype, field, val) {
+  document.querySelectorAll(
+    `#${tblId} input[data-idx="${idx}"][data-measure="${measure}"][data-wtype="${wtype}"][data-field="${field}"]`
+  ).forEach(i => { i.value = val; });
+}
+
+/* ─────────────── APPLY ALL (WINE) ─────────────── */
+function applyWineGP() {
+  const gp = parseFloat(document.getElementById('wineGP').value) / 100;
+  if (isNaN(gp) || gp <= 0 || gp >= 1) return;
+  if (hasCustomSubcats('wine')) {
+    if (!confirm('This will override any group GP% targets you have set.\n\nDo you wish to continue?')) return;
+    clearCustomSubcats('wine');
+  }
+  for (const item of stillWineData) {
+    item.gpBottle = gp; item.sellBottle = r2(sellFromGP(item.costIncVAT, gp));
+    if (item.isBottle) {
+      for (const m of ['125','175','250']) {
+        const cost = item['costPer' + m];
+        if (cost) { item['gp' + m] = gp; item['sell' + m] = r2(sellFromGP(cost, gp)); }
+      }
+    }
+  }
+  for (const item of sparkWineData) {
+    item.gpBottle = gp; item.sellBottle = r2(sellFromGP(item.costIncVAT, gp));
+    if (item.isBottle && item.costPer125) {
+      item.gp125 = gp; item.sell125 = r2(sellFromGP(item.costPer125, gp));
+    }
+  }
+  renderWine();
+}
+
+/* ─────────────── RENDER: BOTTLE TAB (Beer/Soft/Other) ─────────────── */
+function getDataForTab(tab) {
+  if (tab === 'beer') return beerData;
+  if (tab === 'soft') return softData;
+  return otherData;
+}
+
+function renderBottleTab(tab) {
+  const data = getDataForTab(tab);
+  const ph   = document.getElementById('ph-' + tab);
+  const wrap = document.getElementById('wrap-' + tab);
+  const ctrl = document.getElementById('ctrl-' + tab);
+
+  if (data.length === 0) {
+    ph.style.display = 'flex'; ctrl.style.display = 'none';
+    clearRendered(wrap); return;
+  }
+  ph.style.display = 'none'; ctrl.style.display = 'flex';
+
+  const groups = {};
+  for (const item of data) {
+    const key = item.rawCat ? item.rawCat + ' — ' + item.subCat : item.subCat;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+  }
+
+  const tbl = document.createElement('table');
+  tbl.id = tab + 'Table';
+  const thead = tbl.createTHead();
+  const tr = thead.insertRow();
+
+  const colDefs = [
+    { label: 'Code',         cls: 'col-left cw-code'   },
+    { label: 'Sub-Category', cls: 'col-left cw-subcat' },
+    { label: 'Product',      cls: 'col-left'            },
+    { label: 'Format',       cls: 'col-left cw-format'  },
+    { label: 'Units/Case',   cls: 'cw-units'            },
+    { label: 'Cost/Unit £',  cls: 'cw-cost'             },
+    { label: 'Sell Price £', cls: 'cw-sell'             },
+    { label: 'GP %',         cls: 'cw-gp'               },
+  ];
+  for (const col of colDefs) {
+    const th = document.createElement('th');
+    th.textContent = col.label; th.className = col.cls; tr.appendChild(th);
+  }
+
+  const tbody = tbl.createTBody();
+  for (const [groupLabel, items] of Object.entries(groups)) {
+    addSubcatRow(tbody, groupLabel, 8, { tab, groupKey:groupLabel, defaultGP: items[0]?.gp });
+    for (const item of items) {
+      const globalIdx = data.indexOf(item);
+      const row = tbody.insertRow();
+      row.insertCell().outerHTML = `<td class="td-code">${item.code}</td>`;
+      row.insertCell().outerHTML = `<td>${item.subCat}</td>`;
+      row.insertCell().outerHTML = `<td class="td-name" title="${item.name}">${item.name}</td>`;
+      row.insertCell().outerHTML = `<td>${item.size}</td>`;
+      row.insertCell().outerHTML = `<td class="td-center">${item.unitsPerCase || '—'}</td>`;
+      row.insertCell().outerHTML = `<td class="cost-cell td-num">£${item.costIncVAT.toFixed(3)}</td>`;
+
+      const sellTd = row.insertCell(); sellTd.className = 'editable sell';
+      const sellInp = mkInput('number', '0.05', item.sell?.toFixed(2) ?? '',
+                              { tab, idx: globalIdx, field: 'sell' });
+      sellInp.addEventListener('change', onBottleCellChange);
+      sellTd.appendChild(sellInp);
+
+      const gpTd = row.insertCell(); gpTd.className = 'editable gp';
+      const gpInp = mkInput('number', '0.5', item.gp != null ? (item.gp * 100).toFixed(1) : '',
+                            { tab, idx: globalIdx, field: 'gp' });
+      gpInp.addEventListener('change', onBottleCellChange);
+      gpTd.appendChild(gpInp);
+    }
+  }
+
+  clearRendered(wrap);
+  wrap.appendChild(wrapInCard(tbl));
+}
+
+/* ─────────────── RENDER: BEER TAB (Kegs + Packaged) ─────────────── */
+function renderBeerTab() {
+  const ph   = document.getElementById('ph-beer');
+  const wrap = document.getElementById('wrap-beer');
+  const ctrl = document.getElementById('ctrl-beer');
+
+  if (beerData.length === 0) {
+    ph.style.display = 'flex'; ctrl.style.display = 'none';
+    clearRendered(wrap); return;
+  }
+  ph.style.display = 'none'; ctrl.style.display = 'flex';
+
+  const kegItems  = beerData.filter(i => i.isKeg);
+  const packItems = beerData.filter(i => !i.isKeg);
+
+  clearRendered(wrap);
+
+  if (kegItems.length > 0 && packItems.length > 0) {
+    const sections = document.createElement('div');
+    sections.className = 'wine-sections';
+    sections.appendChild(buildKegSection(kegItems));
+    sections.appendChild(buildPackagedBeerSection(packItems));
+    wrap.appendChild(sections);
+  } else if (kegItems.length > 0) {
+    const sections = document.createElement('div');
+    sections.className = 'wine-sections';
+    sections.appendChild(buildKegSection(kegItems));
+    wrap.appendChild(sections);
+  } else {
+    const sections = document.createElement('div');
+    sections.className = 'wine-sections';
+    sections.appendChild(buildPackagedBeerSection(packItems));
+    wrap.appendChild(sections);
+  }
+}
+
+function buildKegSection(kegItems) {
+  const wrap = document.createElement('div');
+  wrap.className = 'wine-section-wrap';
+  const lbl = document.createElement('div');
+  lbl.className = 'wine-section-label'; lbl.textContent = 'Draught Beer — Kegs';
+  wrap.appendChild(lbl);
+
+  const tbl = document.createElement('table');
+  tbl.id = 'kegTable';
+  const thead = tbl.createTHead();
+  const tr1 = thead.insertRow(), tr2 = thead.insertRow();
+
+  function th1(text, rowspan, cls='') {
+    const c = document.createElement('th');
+    c.rowSpan = rowspan; c.textContent = text; if (cls) c.className = cls; return c;
+  }
+  function thG(text, colspan, gCls) {
+    const c = document.createElement('th');
+    c.colSpan = colspan; c.textContent = text;
+    c.className = 'th-group ' + gCls; return c;
+  }
+  function th2(text, cls='') {
+    const c = document.createElement('th');
+    c.textContent = text; if (cls) c.className = cls; return c;
+  }
+
+  // Row 1: fixed cols (rowspan=2) + grouped headers
+  tr1.appendChild(th1('Code',        2, 'col-left cw-code'));
+  tr1.appendChild(th1('Sub-Category',2, 'col-left cw-subcat'));
+  tr1.appendChild(th1('Product',     2, 'col-left'));
+  tr1.appendChild(th1('Format',      2, 'col-left cw-format'));
+  tr1.appendChild(th1('Keg Cost £',  2, 'cw-cost'));
+  tr1.appendChild(thG('Pint',     2, 'gpint'));
+  tr1.appendChild(thG('½ Pint',   2, 'ghalf'));
+
+  // Row 2: Sell/GP under each measure group
+  for (const cls of ['gpint cw-sell','gpint cw-gp','ghalf cw-sell','ghalf cw-gp']) {
+    tr2.appendChild(th2(cls.includes('cw-gp') ? 'GP %' : 'Sell £', cls));
+  }
+
+  const tbody = tbl.createTBody();
+  const groups = groupBy(kegItems, 'subCat');
+  for (const [subCat, items] of Object.entries(groups)) {
+    addSubcatRow(tbody, subCat, 9, { tab:'beer', groupKey:subCat, defaultGP: items[0]?.gpPint });
+    for (const item of items) {
+      const idx = beerData.indexOf(item);
+      const row = tbody.insertRow();
+      row.insertCell().outerHTML = `<td class="td-code">${item.code}</td>`;
+      row.insertCell().outerHTML = `<td>${item.subCat}</td>`;
+      row.insertCell().outerHTML = `<td class="td-name">${item.name}</td>`;
+      row.insertCell().outerHTML = `<td>${item.size}${item.pintsPerKeg ? ' <span style="color:var(--text-muted);font-size:12px">('+Math.round(item.pintsPerKeg)+' pts)</span>' : ''}</td>`;
+      row.insertCell().outerHTML = `<td class="cost-cell td-num">£${item.kegCostIncVAT.toFixed(3)}</td>`;
+
+      // Pint Sell
+      const pintSellTd = row.insertCell(); pintSellTd.className = 'editable sell';
+      if (item.costPerPint != null) {
+        const inp = mkInput('number','0.05', item.sellPint?.toFixed(2) ?? '', {tab:'beer', idx, field:'sellPint'});
+        inp.addEventListener('change', onKegCellChange);
+        pintSellTd.appendChild(inp);
+      } else { pintSellTd.textContent = '—'; }
+
+      // Pint GP
+      const pintGpTd = row.insertCell(); pintGpTd.className = 'editable gp';
+      if (item.costPerPint != null) {
+        const inp = mkInput('number','0.5', item.gpPint != null ? (item.gpPint*100).toFixed(1) : '', {tab:'beer', idx, field:'gpPint'});
+        inp.addEventListener('change', onKegCellChange);
+        pintGpTd.appendChild(inp);
+      } else { pintGpTd.textContent = '—'; }
+
+      // Half Pint Sell
+      const halfSellTd = row.insertCell(); halfSellTd.className = 'editable sell';
+      if (item.costPerHalf != null) {
+        const inp = mkInput('number','0.05', item.sellHalf?.toFixed(2) ?? '', {tab:'beer', idx, field:'sellHalf'});
+        inp.addEventListener('change', onKegCellChange);
+        halfSellTd.appendChild(inp);
+      } else { halfSellTd.textContent = '—'; }
+
+      // Half Pint GP
+      const halfGpTd = row.insertCell(); halfGpTd.className = 'editable gp';
+      if (item.costPerHalf != null) {
+        const inp = mkInput('number','0.5', item.gpHalf != null ? (item.gpHalf*100).toFixed(1) : '', {tab:'beer', idx, field:'gpHalf'});
+        inp.addEventListener('change', onKegCellChange);
+        halfGpTd.appendChild(inp);
+      } else { halfGpTd.textContent = '—'; }
+    }
+  }
+
+  const card = document.createElement('div'); card.className = 'table-card';
+  card.appendChild(tbl);
+  wrap.appendChild(card);
+  return wrap;
+}
+
+function buildPackagedBeerSection(packItems) {
+  const wrap = document.createElement('div');
+  wrap.className = 'wine-section-wrap';
+  const lbl = document.createElement('div');
+  lbl.className = 'wine-section-label'; lbl.textContent = 'Packaged Beer & Cider';
+  wrap.appendChild(lbl);
+
+  const tbl = document.createElement('table');
+  tbl.id = 'packBeerTable';
+  const thead = tbl.createTHead();
+  const tr = thead.insertRow();
+  const colDefs = [
+    { label: 'Code',         cls: 'col-left cw-code'   },
+    { label: 'Sub-Category', cls: 'col-left cw-subcat' },
+    { label: 'Product',      cls: 'col-left'            },
+    { label: 'Format',       cls: 'col-left cw-format'  },
+    { label: 'Units/Case',   cls: 'cw-units'            },
+    { label: 'Cost/Unit £',  cls: 'cw-cost'             },
+    { label: 'Sell Price £', cls: 'cw-sell'             },
+    { label: 'GP %',         cls: 'cw-gp'               },
+  ];
+  for (const col of colDefs) {
+    const th = document.createElement('th');
+    th.textContent = col.label; th.className = col.cls; tr.appendChild(th);
+  }
+
+  const tbody = tbl.createTBody();
+  const groups = groupBy(packItems, 'subCat');
+  for (const [subCat, items] of Object.entries(groups)) {
+    addSubcatRow(tbody, subCat, 8, { tab:'beer', groupKey:subCat, defaultGP: items[0]?.gp });
+    for (const item of items) {
+      const idx = beerData.indexOf(item);
+      const row = tbody.insertRow();
+      row.insertCell().outerHTML = `<td class="td-code">${item.code}</td>`;
+      row.insertCell().outerHTML = `<td>${item.subCat}</td>`;
+      row.insertCell().outerHTML = `<td class="td-name">${item.name}</td>`;
+      row.insertCell().outerHTML = `<td>${item.size}</td>`;
+      row.insertCell().outerHTML = `<td class="td-center">${item.unitsPerCase || '—'}</td>`;
+      row.insertCell().outerHTML = `<td class="cost-cell td-num">£${item.costIncVAT.toFixed(3)}</td>`;
+
+      const sellTd = row.insertCell(); sellTd.className = 'editable sell';
+      const sellInp = mkInput('number','0.05', item.sell?.toFixed(2) ?? '', {tab:'beer', idx, field:'sell'});
+      sellInp.addEventListener('change', onBottleCellChange);
+      sellTd.appendChild(sellInp);
+
+      const gpTd = row.insertCell(); gpTd.className = 'editable gp';
+      const gpInp = mkInput('number','0.5', item.gp != null ? (item.gp*100).toFixed(1) : '', {tab:'beer', idx, field:'gp'});
+      gpInp.addEventListener('change', onBottleCellChange);
+      gpTd.appendChild(gpInp);
+    }
+  }
+
+  const card = document.createElement('div'); card.className = 'table-card';
+  card.appendChild(tbl);
+  wrap.appendChild(card);
+  return wrap;
+}
+
+function onKegCellChange(e) {
+  const inp  = e.target;
+  const idx  = parseInt(inp.dataset.idx);
+  const field = inp.dataset.field;
+  const item = beerData[idx];
+
+  if (field === 'sellPint') {
+    const v = parseFloat(inp.value); if (isNaN(v) || v <= 0) return;
+    item.sellPint = r2(v); item.gpPint = r4(gpFromSell(item.costPerPint, v));
+    document.querySelectorAll(`input[data-idx="${idx}"][data-field="gpPint"]`)
+      .forEach(i => { i.value = (item.gpPint * 100).toFixed(1); });
+  } else if (field === 'gpPint') {
+    const v = parseFloat(inp.value) / 100; if (isNaN(v) || v >= 1 || v < 0) return;
+    item.gpPint = r4(v); item.sellPint = r2(sellFromGP(item.costPerPint, v));
+    document.querySelectorAll(`input[data-idx="${idx}"][data-field="sellPint"]`)
+      .forEach(i => { i.value = item.sellPint.toFixed(2); });
+  } else if (field === 'sellHalf') {
+    const v = parseFloat(inp.value); if (isNaN(v) || v <= 0) return;
+    item.sellHalf = r2(v); item.gpHalf = r4(gpFromSell(item.costPerHalf, v));
+    document.querySelectorAll(`input[data-idx="${idx}"][data-field="gpHalf"]`)
+      .forEach(i => { i.value = (item.gpHalf * 100).toFixed(1); });
+  } else if (field === 'gpHalf') {
+    const v = parseFloat(inp.value) / 100; if (isNaN(v) || v >= 1 || v < 0) return;
+    item.gpHalf = r4(v); item.sellHalf = r2(sellFromGP(item.costPerHalf, v));
+    document.querySelectorAll(`input[data-idx="${idx}"][data-field="sellHalf"]`)
+      .forEach(i => { i.value = item.sellHalf.toFixed(2); });
+  }
+}
+
+function onBottleCellChange(e) {
+  const inp = e.target;
+  const tab = inp.dataset.tab, idx = parseInt(inp.dataset.idx), field = inp.dataset.field;
+  const data = getDataForTab(tab), item = data[idx], cost = item.costIncVAT;
+  if (field === 'sell') {
+    const v = parseFloat(inp.value); if (isNaN(v) || v <= 0) return;
+    item.sell = r2(v); item.gp = r4(gpFromSell(cost, v));
+    document.querySelectorAll(`#${tab}Table input[data-tab="${tab}"][data-idx="${idx}"][data-field="gp"]`)
+      .forEach(i => { i.value = (item.gp * 100).toFixed(1); });
+  } else {
+    const v = parseFloat(inp.value) / 100; if (isNaN(v) || v >= 1 || v < 0) return;
+    item.gp = r4(v); item.sell = r2(sellFromGP(cost, v));
+    document.querySelectorAll(`#${tab}Table input[data-tab="${tab}"][data-idx="${idx}"][data-field="sell"]`)
+      .forEach(i => { i.value = item.sell.toFixed(2); });
+  }
+}
+
+/* ─────────────── APPLY ALL (BOTTLE TABS) ─────────────── */
+function applyBottleGP(tab, inputId) {
+  const gp = parseFloat(document.getElementById(inputId).value) / 100;
+  if (isNaN(gp) || gp <= 0 || gp >= 1) return;
+  if (hasCustomSubcats(tab)) {
+    if (!confirm('This will override any sub-category GP% targets you have set.\n\nDo you wish to continue?')) return;
+    clearCustomSubcats(tab);
+  }
+  for (const item of getDataForTab(tab)) {
+    item.gp = gp; item.sell = r2(sellFromGP(item.costIncVAT, gp));
+  }
+  renderBottleTab(tab);
+}
+
+function applyBeerGP() {
+  const gp = parseFloat(document.getElementById('beerGP').value) / 100;
+  if (isNaN(gp) || gp <= 0 || gp >= 1) return;
+  if (hasCustomSubcats('beer')) {
+    if (!confirm('This will override any sub-category GP% targets you have set.\n\nDo you wish to continue?')) return;
+    clearCustomSubcats('beer');
+  }
+  for (const item of beerData) {
+    if (item.isKeg) {
+      if (item.costPerPint) { item.gpPint = gp; item.sellPint = r2(sellFromGP(item.costPerPint, gp)); }
+      if (item.costPerHalf) { item.gpHalf = gp; item.sellHalf = r2(sellFromGP(item.costPerHalf, gp)); }
+    } else {
+      item.gp = gp; item.sell = r2(sellFromGP(item.costIncVAT, gp));
+    }
+  }
+  renderBeerTab();
+}
+function applySoftGP()  { applyBottleGP('soft',  'softGP');  }
+function applyOtherGP() { applyBottleGP('other', 'otherGP'); }
+
+/* ─────────────── SHARED HELPERS ─────────────── */
+/**
+ * Add a sub-category header row.
+ * gpOpts: { tab, groupKey, defaultGP } — when provided, includes a per-subcat Apply button.
+ */
+function addSubcatRow(tbody, label, colspan, gpOpts) {
+  const scRow = tbody.insertRow(); scRow.className = 'subcat-row';
+  const scTd  = document.createElement('td'); scTd.colSpan = colspan;
+
+  if (gpOpts) {
+    const { tab, groupKey, defaultGP } = gpOpts;
+    const inner = document.createElement('div'); inner.className = 'subcat-inner';
+
+    const nameSpan = document.createElement('span'); nameSpan.textContent = label;
+    inner.appendChild(nameSpan);
+
+    const ctrl = document.createElement('div'); ctrl.className = 'subcat-ctrl';
+
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.step = '0.5'; inp.min = '0'; inp.max = '99';
+    inp.value = defaultGP != null ? (defaultGP * 100).toFixed(1) : '';
+    inp.className = 'ctrl-input';
+
+    const pct = document.createElement('span'); pct.textContent = '%';
+
+    const btn = document.createElement('button');
+    btn.textContent = 'Apply'; btn.className = 'btn btn-primary btn-sm';
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const gp = parseFloat(inp.value) / 100;
+      if (isNaN(gp) || gp <= 0 || gp >= 1) return;
+      applySubcatGP(tab, groupKey, gp);
+    });
+
+    ctrl.appendChild(inp); ctrl.appendChild(pct); ctrl.appendChild(btn);
+    inner.appendChild(ctrl);
+    scTd.appendChild(inner);
+  } else {
+    scTd.textContent = label;
+  }
+
+  scRow.appendChild(scTd);
+}
+
+/** Apply a GP% to all items matching a given tab + groupKey. */
+function applySubcatGP(tab, groupKey, gp) {
+  markCustomSubcat(tab, groupKey);
+
+  function itemKey(item) {
+    return item.rawCat ? item.rawCat + ' — ' + item.subCat : item.subCat;
+  }
+
+  if (tab === 'spirits') {
+    for (const item of spiritsData) {
+      if (item.subCat !== groupKey) continue;
+      for (const s of ['25','35','50']) {
+        const cost = item['costPer'+s]; if (!cost) continue;
+        item['gp'+s] = gp; item['sell'+s] = r2(sellFromGP(cost, gp));
+      }
+    }
+    renderSpirits();
+  } else if (tab === 'wine') {
+    for (const item of stillWineData) {
+      if (item.wineGroup !== groupKey) continue;
+      item.gpBottle = gp; item.sellBottle = r2(sellFromGP(item.costIncVAT, gp));
+      if (item.isBottle) {
+        for (const m of ['125','175','250']) {
+          const cost = item['costPer'+m];
+          if (cost) { item['gp'+m] = gp; item['sell'+m] = r2(sellFromGP(cost, gp)); }
+        }
+      }
+    }
+    for (const item of sparkWineData) {
+      if (item.wineGroup !== groupKey) continue;
+      item.gpBottle = gp; item.sellBottle = r2(sellFromGP(item.costIncVAT, gp));
+      if (item.isBottle && item.costPer125) {
+        item.gp125 = gp; item.sell125 = r2(sellFromGP(item.costPer125, gp));
+      }
+    }
+    renderWine();
+  } else if (tab === 'beer') {
+    for (const item of beerData) {
+      if (itemKey(item) !== groupKey) continue;
+      if (item.isKeg) {
+        if (item.costPerPint) { item.gpPint = gp; item.sellPint = r2(sellFromGP(item.costPerPint, gp)); }
+        if (item.costPerHalf) { item.gpHalf = gp; item.sellHalf = r2(sellFromGP(item.costPerHalf, gp)); }
+      } else {
+        item.gp = gp; item.sell = r2(sellFromGP(item.costIncVAT, gp));
+      }
+    }
+    renderBeerTab();
+  } else {
+    for (const item of getDataForTab(tab)) {
+      if (itemKey(item) !== groupKey) continue;
+      item.gp = gp; item.sell = r2(sellFromGP(item.costIncVAT, gp));
+    }
+    renderBottleTab(tab);
+  }
+}
+
+/** Create a number input with data-* attributes from an object */
+function mkInput(type, step, value, dataAttrs) {
+  const inp = document.createElement('input');
+  inp.type = type; inp.step = step; inp.min = '0'; inp.value = value;
+  for (const [k, v] of Object.entries(dataAttrs)) inp.dataset[k] = v;
+  return inp;
+}
+
+/* ─────────────── TABS ─────────────── */
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+}
+
+/* ─────────────── STATUS ─────────────── */
+function setStatus(msg) { document.getElementById('statusMsg').textContent = msg; }
+
+/* ─────────────── EXPORT MENU ─────────────── */
+function toggleExportMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('exportMenu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+function closeExportMenu() {
+  document.getElementById('exportMenu').style.display = 'none';
+}
+document.addEventListener('click', closeExportMenu);
+
+function getCurrentTab() {
+  const btn = document.querySelector('.tab-btn.active');
+  return btn ? btn.dataset.tab : 'spirits';
+}
+
+async function exportCurrent() {
+  const tab = getCurrentTab();
+  const cn  = document.getElementById('customerName').value || 'Customer';
+  const fml = useFormulas();
+  const wb  = XLSX.utils.book_new();
+  if (tab === 'spirits' && spiritsData.length > 0) {
+    addSpiritsSheet(wb, cn, fml);
+  } else if (tab === 'wine') {
+    addWineSheet(wb, cn, fml);
+  } else if (tab === 'beer' && beerData.length > 0) {
+    appendBeerSheet(wb, cn, fml);
+  } else if (tab === 'soft' && softData.length > 0) {
+    appendBottleSheet(wb, softData, 'Soft Drinks', cn, fml);
+  } else if (tab === 'other' && otherData.length > 0) {
+    appendBottleSheet(wb, otherData, 'Other', cn, fml);
+  } else {
+    alert('No data to export for this tab.'); return;
+  }
+  const tabLabel = document.querySelector('.tab-btn.active').textContent.trim().replace(/\s+\d+$/, '');
+  await downloadWorkbook(wb, `${cn.replace(/[^a-zA-Z0-9 ]/g,'_')} - ${tabLabel} GP Pricing.xlsx`);
+}
+
+function exportAll() { exportWorkbook(useFormulas()); }
+
+/* ─────────────── EXPORT ─────────────── */
+async function exportWorkbook(fml = false) {
+  const cn = document.getElementById('customerName').value || 'Customer';
+  const wb = XLSX.utils.book_new();
+
+  if (spiritsData.length > 0)   addSpiritsSheet(wb, cn, fml);
+  addWineSheet(wb, cn, fml);
+  appendBeerSheet(wb, cn, fml);
+  appendBottleSheet(wb, softData,  'Soft Drinks',  cn, fml);
+  if (otherData.length > 0) appendBottleSheet(wb, otherData, 'Other', cn, fml);
+
+  const filename = `${cn.replace(/[^a-zA-Z0-9 ]/g,'_')} GP Pricing.xlsx`;
+  await downloadWorkbook(wb, filename);
+}
+
+/* ─────────────── EXPORT SHEET HELPERS ─────────────── */
+
+/**
+ * Apply freeze panes at C4 and merge the customer name across all columns (row 1).
+ * colCount = total number of columns in the sheet.
+ */
+function applySheetFormatting(ws, colCount) {
+  // Merge customer name cell across full width (row 1)
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } }];
+  // NOTE: freeze panes are applied via JSZip XML injection in downloadWorkbook()
+  // because SheetJS Community Edition 0.18.5 does not support writing freeze panes.
+}
+
+/**
+ * Write workbook to an .xlsx file with freeze panes patched into each sheet's XML.
+ * SheetJS CE silently ignores !sheetViews, so we open the generated zip and
+ * replace the bare <sheetViews> element with the full freeze-pane XML.
+ */
+async function downloadWorkbook(wb, filename) {
+  // Generate raw binary string from SheetJS
+  const bstr = XLSX.write(wb, { bookType: 'xlsx', type: 'binary' });
+
+  // Convert binary string to Uint8Array for JSZip
+  const buf = new Uint8Array(bstr.length);
+  for (let i = 0; i < bstr.length; i++) buf[i] = bstr.charCodeAt(i);
+
+  // Open with JSZip
+  const zip = await JSZip.loadAsync(buf);
+
+  // The freeze XML we want in every worksheet
+  const freezeXml =
+    '<sheetViews>' +
+      '<sheetView workbookViewId="0">' +
+        '<pane xSplit="2" ySplit="3" topLeftCell="C4" activePane="bottomRight" state="frozen"/>' +
+        '<selection pane="topRight"/>' +
+        '<selection pane="bottomLeft"/>' +
+        '<selection pane="bottomRight" activeCell="C4" sqref="C4"/>' +
+      '</sheetView>' +
+    '</sheetViews>';
+
+  // Patch every worksheet file in xl/worksheets/
+  const sheetFiles = Object.keys(zip.files).filter(p => /^xl\/worksheets\/sheet\d+\.xml$/.test(p));
+  for (const path of sheetFiles) {
+    let xml = await zip.files[path].async('string');
+    // Replace SheetJS's bare sheetViews element with our freeze pane version
+    xml = xml.replace(/<sheetViews>[\s\S]*?<\/sheetViews>/, freezeXml);
+    zip.file(path, xml);
+  }
+
+  // Generate final blob and trigger download
+  const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+}
+
+/* ─────────────── FORMULA HELPER ─────────────── */
+function useFormulas() { return document.getElementById('exportFormulas').checked; }
+
+/** Write a formula cell (with cached value) into a SheetJS worksheet. */
+function setFormula(ws, R, C, formula, fmt, cachedVal) {
+  const addr = XLSX.utils.encode_cell({r: R, c: C});
+  ws[addr] = { t: 'n', f: formula };
+  if (cachedVal != null) ws[addr].v = cachedVal;
+  if (fmt) ws[addr].z = fmt;
+}
+
+function addSpiritsSheet(wb, cn, fml) {
+  if (spiritsData.length === 0) return;
+  const rows = [[cn],[],
+    ['Code','Product','Size','IM Unit £','Cost Inc VAT',
+     '25ml Sell £','25ml GP%','35ml Sell £','35ml GP%','50ml Sell £','50ml GP%']];
+  const itemMap = [null, null, null]; // parallel: null = header/subcat, item obj = data row
+  for (const [sc, items] of Object.entries(groupBy(spiritsData,'subCat'))) {
+    rows.push([sc]); itemMap.push(null);
+    for (const it of items) {
+      rows.push([it.code,it.name,it.size,it.unitPrice,it.costIncVAT,
+                 it.sell25,it.gp25,it.sell35,it.gp35,it.sell50,it.gp50]);
+      itemMap.push(it);
+    }
+  }
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:10},{wch:45},{wch:12},{wch:12},{wch:12},
+                 {wch:12},{wch:9},{wch:12},{wch:9},{wch:12},{wch:9}];
+  applySheetFormatting(ws, 11);
+  fmtSpiritsSheet(ws, rows);
+  if (fml) {
+    // Cols: F=25mlSell(5) G=25mlGP(6) H=35mlSell(7) I=35mlGP(8) J=50mlSell(9) K=50mlGP(10)
+    for (let R = 3; R < rows.length; R++) {
+      const it = itemMap[R]; if (!it) continue;
+      const r = R + 1; // Excel 1-based row
+      if (it.costPer25) setFormula(ws,R,6,  `=(F${r}-${it.costPer25.toFixed(6)})/F${r}`, '0.0%', it.gp25);
+      if (it.costPer35) setFormula(ws,R,8,  `=(H${r}-${it.costPer35.toFixed(6)})/H${r}`, '0.0%', it.gp35);
+      if (it.costPer50) setFormula(ws,R,10, `=(J${r}-${it.costPer50.toFixed(6)})/J${r}`, '0.0%', it.gp50);
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, ws, 'Spirits');
+}
+
+function addWineSheet(wb, cn, fml) {
+  const total = stillWineData.length + sparkWineData.length;
+  if (total === 0) return;
+
+  // Same grouping logic as renderWine
+  const allWine = [
+    ...stillWineData.map((it, i) => ({ item: it, wtype: 'still', idx: i })),
+    ...sparkWineData.map((it, i) => ({ item: it, wtype: 'spark', idx: i })),
+  ];
+  const grouped = {};
+  for (const g of WINE_GROUPS_ORDER) grouped[g] = [];
+  const fortified = {}, otherGroups = {};
+  for (const vi of allWine) {
+    const g = vi.item.wineGroup || 'White';
+    if (g === FORTIFIED_GROUP_LABEL) {
+      const sc = vi.item.subCat; if (!fortified[sc]) fortified[sc] = []; fortified[sc].push(vi);
+    } else if (grouped[g] !== undefined) { grouped[g].push(vi);
+    } else { if (!otherGroups[g]) otherGroups[g] = []; otherGroups[g].push(vi); }
+  }
+  const byPrice = (a, b) => a.item.costIncVAT - b.item.costIncVAT;
+  for (const g of WINE_GROUPS_ORDER) grouped[g].sort(byPrice);
+  for (const items of Object.values(otherGroups)) items.sort(byPrice);
+  for (const items of Object.values(fortified)) items.sort(byPrice);
+
+  // Cols: A=Code B=Country C=Product D=UnitPrice(ex) E=CostIncVAT F=125Sell G=125GP
+  //       H=175Sell I=175GP J=250Sell K=250GP L=BtlSell M=BtlGP
+  const rows = [[cn], [],
+    ['Code','Country','Product','IM £ ex-VAT','IM £ inc-VAT',
+     '125ml Sell £','125ml GP%','175ml Sell £','175ml GP%',
+     '250ml Sell £','250ml GP%','Bottle Sell £','Bottle GP%']];
+  const itemMap = [null, null, null];
+
+  function addGroup(label, viewItems) {
+    if (viewItems.length === 0) return;
+    rows.push([label]); itemMap.push(null);
+    for (const vi of viewItems) {
+      const it = vi.item;
+      rows.push([it.code, it.country||'', it.name, it.unitPrice, it.costIncVAT,
+        it.sell125, it.gp125, it.sell175, it.gp175,
+        it.sell250, it.gp250, it.sellBottle, it.gpBottle]);
+      itemMap.push(vi);
+    }
+  }
+
+  for (const g of WINE_GROUPS_ORDER) addGroup(g, grouped[g]);
+  for (const [g, items] of Object.entries(otherGroups)) addGroup(g, items);
+
+  // Fortified section
+  for (const [sc, viewItems] of Object.entries(fortified)) {
+    if (viewItems.length === 0) continue;
+    rows.push([sc]); itemMap.push(null);
+    for (const vi of viewItems) {
+      const it = vi.item;
+      rows.push([it.code, '', it.name, it.unitPrice, it.costIncVAT,
+        it.sell125, it.gp125, it.sell175, it.gp175,
+        it.sell250, it.gp250, it.sellBottle, it.gpBottle]);
+      itemMap.push(vi);
+    }
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:10},{wch:14},{wch:45},{wch:12},{wch:12},
+                 {wch:12},{wch:9},{wch:12},{wch:9},{wch:12},{wch:9},{wch:12},{wch:9}];
+  applySheetFormatting(ws, 13);
+
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = 3; R <= range.e.r; R++) {
+    if (!rows[R] || rows[R].length <= 1) continue;
+    [3,4,5,7,9,11].forEach(C => fmtCell(ws,R,C,'£#,##0.00'));
+    [6,8,10,12].forEach(C => fmtCell(ws,R,C,'0.0%'));
+  }
+
+  if (fml) {
+    // F=5(125Sell) G=6(125GP) H=7(175Sell) I=8(175GP) J=9(250Sell) K=10(250GP) L=11(BtlSell) M=12(BtlGP)
+    // E col = 4 (costIncVAT)
+    for (let R = 3; R < rows.length; R++) {
+      const vi = itemMap[R]; if (!vi) continue;
+      const it = vi.item; const r = R + 1;
+      if (it.costPer125) setFormula(ws,R,6,  `=(F${r}-${it.costPer125.toFixed(6)})/F${r}`, '0.0%', it.gp125);
+      if (vi.wtype === 'still') {
+        if (it.costPer175) setFormula(ws,R,8,  `=(H${r}-${it.costPer175.toFixed(6)})/H${r}`, '0.0%', it.gp175);
+        if (it.costPer250) setFormula(ws,R,10, `=(J${r}-${it.costPer250.toFixed(6)})/J${r}`, '0.0%', it.gp250);
+      }
+      setFormula(ws,R,12, `=(L${r}-E${r})/L${r}`, '0.0%', it.gpBottle);
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Wine');
+}
+
+function fmtCell(ws, R, C, fmt) {
+  const addr = XLSX.utils.encode_cell({r:R,c:C});
+  if (ws[addr]?.v != null) ws[addr].z = fmt;
+}
+
+function fmtSpiritsSheet(ws, rows) {
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = 3; R <= range.e.r; R++) {
+    if (!rows[R] || rows[R].length <= 1) continue;
+    [3,4,5,7,9].forEach(C => fmtCell(ws,R,C,'£#,##0.00'));
+    [6,8,10].forEach(C => fmtCell(ws,R,C,'0.0%'));
+  }
+}
+
+function appendBeerSheet(wb, cn, fml) {
+  if (beerData.length === 0) return;
+  const kegItems  = beerData.filter(i => i.isKeg);
+  const packItems = beerData.filter(i => !i.isKeg);
+
+  const rows = [[cn], []];
+
+  // ── Keg section ──
+  if (kegItems.length > 0) {
+    rows.push(['Code','Sub-Category','Product','Format','Keg Cost £','Pint Sell £','Pint GP%','½ Pint Sell £','½ Pint GP%']);
+    const kegGroups = {};
+    for (const it of kegItems) {
+      if (!kegGroups[it.subCat]) kegGroups[it.subCat] = [];
+      kegGroups[it.subCat].push(it);
+    }
+    const kegHeaderRow = rows.length - 1; // row index of keg header
+    for (const [gl, items] of Object.entries(kegGroups)) {
+      rows.push([gl]);
+      for (const it of items)
+        rows.push([it.code, it.subCat, it.name, it.size,
+                   it.kegCostIncVAT, it.sellPint, it.gpPint, it.sellHalf, it.gpHalf]);
+    }
+    rows.push([]); // blank separator
+  }
+
+  // ── Packaged section ──
+  if (packItems.length > 0) {
+    rows.push(['Code','Sub-Category','Product','Format','Units/Case','IM Cost/Unit £','Sell Price £','GP%']);
+    const packGroups = {};
+    for (const it of packItems) {
+      if (!packGroups[it.subCat]) packGroups[it.subCat] = [];
+      packGroups[it.subCat].push(it);
+    }
+    for (const [gl, items] of Object.entries(packGroups)) {
+      rows.push([gl]);
+      for (const it of items)
+        rows.push([it.code, it.subCat, it.name, it.size, it.unitsPerCase||'', it.costIncVAT, it.sell, it.gp]);
+    }
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  // Use wider col set to accommodate 9-col keg section
+  ws['!cols'] = [{wch:10},{wch:18},{wch:45},{wch:18},{wch:14},{wch:13},{wch:10},{wch:13},{wch:10}];
+  applySheetFormatting(ws, 9);
+  const range = XLSX.utils.decode_range(ws['!ref']);
+
+  for (let R = 2; R <= range.e.r; R++) {
+    const row = rows[R];
+    if (!row || row.length <= 1) continue;
+    // Detect keg row by presence of kegCostIncVAT (col index 4 = keg cost, 5=pintSell, 6=pintGP, 7=halfSell, 8=halfGP)
+    if (row.length >= 9 && typeof row[4] === 'number') {
+      // Keg row
+      fmtCell(ws,R,4,'£#,##0.000');
+      fmtCell(ws,R,5,'£#,##0.00'); fmtCell(ws,R,6,'0.0%');
+      fmtCell(ws,R,7,'£#,##0.00'); fmtCell(ws,R,8,'0.0%');
+      if (fml) {
+        const r = R + 1;
+        const pintCost = beerData.find(i => i.isKeg && i.name === row[2])?.costPerPint;
+        const halfCost = beerData.find(i => i.isKeg && i.name === row[2])?.costPerHalf;
+        if (pintCost != null) setFormula(ws,R,6,`=(F${r}-${pintCost.toFixed(6)})/F${r}`,'0.0%',row[6]);
+        if (halfCost != null) setFormula(ws,R,8,`=(H${r}-${halfCost.toFixed(6)})/H${r}`,'0.0%',row[8]);
+      }
+    } else if (row.length === 8 && typeof row[5] === 'number') {
+      // Packaged beer row: cols 5=cost, 6=sell, 7=gp
+      fmtCell(ws,R,5,'£#,##0.00'); fmtCell(ws,R,6,'£#,##0.00'); fmtCell(ws,R,7,'0.0%');
+      if (fml) {
+        const r = R + 1;
+        setFormula(ws,R,7,`=(G${r}-F${r})/G${r}`,'0.0%',row[7]);
+      }
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Beer & Cider');
+}
+
+function appendBottleSheet(wb, data, sheetName, cn, fml) {
+  if (data.length === 0) return;
+  const rows = [[cn],[],
+    ['Code','Sub-Category','Product','Format','Units/Case','IM Cost/Unit £','Sell Price £','GP%']];
+  const groups = {};
+  for (const item of data) {
+    const key = item.rawCat ? item.rawCat + ' — ' + item.subCat : item.subCat;
+    if (!groups[key]) groups[key] = []; groups[key].push(item);
+  }
+  for (const [gl, items] of Object.entries(groups)) {
+    rows.push([gl]);
+    for (const it of items) rows.push([it.code,it.subCat,it.name,it.size,
+                                        it.unitsPerCase||'',it.costIncVAT,it.sell,it.gp]);
+  }
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:10},{wch:18},{wch:45},{wch:18},{wch:10},{wch:14},{wch:12},{wch:10}];
+  applySheetFormatting(ws, 8);
+  // Cols: A=Code B=SubCat C=Product D=Format E=Units F=Cost G=Sell H=GP
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = 3; R <= range.e.r; R++) {
+    if (!rows[R] || rows[R].length <= 1) continue;
+    [5,6].forEach(C => fmtCell(ws,R,C,'£#,##0.00'));
+    fmtCell(ws,R,7,'0.0%');
+    // Formula mode: GP% = (Sell - Cost) / Sell — both columns are in the sheet
+    if (fml) {
+      const r = R + 1;
+      setFormula(ws,R,7, `=(G${r}-F${r})/G${r}`, '0.0%', rows[R][7]);
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+}
+
+/* ─────────────── DATE ─────────────── */
+document.getElementById('statusDate').textContent =
+  new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+</script>
+</body>
+</html>

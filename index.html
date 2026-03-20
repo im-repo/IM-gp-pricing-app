@@ -8,7 +8,16 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script type="module">
+    import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
+             getDocs, getDoc, query, orderBy, serverTimestamp }
+      from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    window._db = getFirestore(firebase.app(), 'im-gp-calculator');
+    window._fs = { collection, doc, addDoc, updateDoc, deleteDoc,
+                   getDocs, getDoc, query, orderBy, serverTimestamp };
+    // If auth already resolved before this module loaded, trigger the list now
+    if (firebase.auth().currentUser && typeof loadProfileList === 'function') loadProfileList();
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2629,25 +2638,28 @@ document.getElementById('statusDate').textContent =
 
 <!-- ══════════════════════════ CUSTOMER PROFILES ══════════════════════════ -->
 <script>
-  const db = firebase.firestore();
   window.pendingOverrides = null;
   let activeProfileId = null;
 
+  function _db()  { return window._db; }
+  function _fs()  { return window._fs; }
+  function _col(uid) { return _fs().collection(_db(), 'users', uid, 'profiles'); }
+  function _ref(uid, id) { return _fs().doc(_db(), 'users', uid, 'profiles', id); }
+
   /* ── Populate dropdown ── */
   async function loadProfileList() {
+    if (!window._db) return;
     const uid = auth.currentUser?.uid;
     if (!uid) return;
-    const snap = await db.collection('users').doc(uid).collection('profiles')
-                         .orderBy('customerName').get();
-    const sel = document.getElementById('profileSelect');
+    const fs   = _fs();
+    const snap = await fs.getDocs(fs.query(_col(uid), fs.orderBy('customerName')));
+    const sel  = document.getElementById('profileSelect');
     while (sel.options.length > 1) sel.remove(1);
-    snap.forEach(doc => {
+    snap.forEach(d => {
       const opt = document.createElement('option');
-      opt.value = doc.id;
-      opt.textContent = doc.data().customerName;
+      opt.value = d.id; opt.textContent = d.data().customerName;
       sel.appendChild(opt);
     });
-    // Re-select previously active profile if still in list
     if (activeProfileId) sel.value = activeProfileId;
   }
 
@@ -2657,14 +2669,13 @@ document.getElementById('statusDate').textContent =
     const id  = sel.value;
     document.getElementById('deleteProfileBtn').disabled = !id;
     activeProfileId = id || null;
-
     if (!id) { window.pendingOverrides = null; return; }
 
-    const uid = auth.currentUser?.uid;
-    const doc = await db.collection('users').doc(uid).collection('profiles').doc(id).get();
-    if (!doc.exists) return;
+    const uid     = auth.currentUser?.uid;
+    const docSnap = await _fs().getDoc(_ref(uid, id));
+    if (!docSnap.exists()) return;
 
-    const data = doc.data();
+    const data = docSnap.data();
     document.getElementById('customerName').value = data.customerName || '';
     const ov = data.overrides || {};
 
@@ -2760,18 +2771,15 @@ document.getElementById('statusDate').textContent =
     const btn = document.getElementById('saveProfileBtn');
     btn.textContent = 'Saving…'; btn.disabled = true;
 
-    const payload = {
-      customerName,
-      overrides:  buildOverrides(),
-      updatedAt:  firebase.firestore.FieldValue.serverTimestamp(),
-    };
+    const fs = _fs();
+    const payload = { customerName, overrides: buildOverrides(), updatedAt: fs.serverTimestamp() };
 
     try {
       if (activeProfileId) {
-        await db.collection('users').doc(uid).collection('profiles').doc(activeProfileId).update(payload);
+        await fs.updateDoc(_ref(uid, activeProfileId), payload);
       } else {
-        payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-        const ref = await db.collection('users').doc(uid).collection('profiles').add(payload);
+        payload.createdAt = fs.serverTimestamp();
+        const ref = await fs.addDoc(_col(uid), payload);
         activeProfileId = ref.id;
         document.getElementById('deleteProfileBtn').disabled = false;
       }
@@ -2791,7 +2799,7 @@ document.getElementById('statusDate').textContent =
     const name = document.getElementById('customerName').value.trim() || 'this profile';
     if (!confirm(`Delete the profile for "${name}"?\nThis cannot be undone.`)) return;
     const uid = auth.currentUser?.uid;
-    await db.collection('users').doc(uid).collection('profiles').doc(activeProfileId).delete();
+    await _fs().deleteDoc(_ref(uid, activeProfileId));
     activeProfileId = null;
     window.pendingOverrides = null;
     document.getElementById('profileSelect').value = '';

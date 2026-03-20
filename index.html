@@ -865,6 +865,47 @@ function clearCustomSubcats(tab)           { Object.keys(customSubcats).filter(k
 function hasCustomSubcats(tab)             { return Object.keys(customSubcats).some(k => k.startsWith(tab + ':')); }
 function resetAllCustomSubcats()           { Object.keys(customSubcats).forEach(k => delete customSubcats[k]); }
 
+/* ─────────────── DIRTY TRACKING (manual cell edits) ─────────────── */
+function getTabAllItems(tab) {
+  if (tab === 'wine')    return [...stillWineData, ...sparkWineData];
+  if (tab === 'spirits') return spiritsData;
+  return getDataForTab(tab);
+}
+function getItemsForGroup(tab, groupKey) {
+  const itemKey = item => item.rawCat ? item.rawCat + ' — ' + item.subCat : item.subCat;
+  if (tab === 'spirits') return spiritsData.filter(i => i.subCat === groupKey);
+  if (tab === 'wine') {
+    const still = stillWineData.filter(i => i.wineGroup === groupKey);
+    const spark = sparkWineData.filter(i => i.wineGroup === groupKey);
+    if (still.length || spark.length) return [...still, ...spark];
+    if (groupKey.startsWith(FORTIFIED_GROUP_LABEL + ':')) {
+      const sc = groupKey.substring(FORTIFIED_GROUP_LABEL.length + 1);
+      return [...stillWineData, ...sparkWineData].filter(i => i.subCat === sc);
+    }
+    return [];
+  }
+  return getDataForTab(tab).filter(i => itemKey(i) === groupKey);
+}
+function isTabDirty(tab)             { return getTabAllItems(tab).some(i => i._dirty); }
+function isGroupDirty(tab, groupKey) { return getItemsForGroup(tab, groupKey).some(i => i._dirty); }
+function clearTabDirty(tab)          { getTabAllItems(tab).forEach(i => { delete i._dirty; }); }
+function clearGroupDirty(tab, key)   { getItemsForGroup(tab, key).forEach(i => { delete i._dirty; }); }
+
+function warnDirtyTab(tab) {
+  return !isTabDirty(tab) || confirm(
+    'Some prices or GP% in this section have been manually edited.\n\n' +
+    'Applying a new target will overwrite those changes. Continue?'
+  );
+}
+function warnDirtyGroup(tab, groupKey) {
+  const label = groupKey.startsWith(FORTIFIED_GROUP_LABEL + ':')
+    ? groupKey.substring(FORTIFIED_GROUP_LABEL.length + 1) : groupKey;
+  return !isGroupDirty(tab, groupKey) || confirm(
+    'Some prices or GP% in "' + label + '" have been manually edited.\n\n' +
+    'Applying a new target will overwrite those changes. Continue?'
+  );
+}
+
 /* ─────────────── HELPERS ─────────────── */
 const r2 = v => Math.round(v * 100) / 100;
 const r4 = v => Math.round(v * 10000) / 10000;
@@ -1221,6 +1262,7 @@ function onSpiritCellChange(e) {
   const idx = parseInt(inp.dataset.idx), size = inp.dataset.size, field = inp.dataset.field;
   const item = spiritsData[idx];
   const rawCost = item['costPer' + size]; if (!rawCost) return;
+  item._dirty = true;
   const cost = ec(rawCost, 'spirits');
   if (field === 'sell') {
     const v = parseFloat(inp.value); if (isNaN(v) || v <= 0) return;
@@ -1243,10 +1285,12 @@ function syncSpiritSibling(idx, size, field, val) {
 function applySpiritsGP() {
   const gp = parseFloat(document.getElementById('spiritsGP').value) / 100;
   if (isNaN(gp) || gp <= 0 || gp >= 1) return;
+  if (!warnDirtyTab('spirits')) return;
   if (hasCustomSubcats('spirits')) {
     if (!confirm('This will override any sub-category GP% targets you have set.\n\nDo you wish to continue?')) return;
     clearCustomSubcats('spirits');
   }
+  clearTabDirty('spirits');
   for (const item of spiritsData) {
     for (const s of ['25','35','50']) {
       const cost = item['costPer' + s]; if (!cost) continue;
@@ -1526,6 +1570,7 @@ function onWineCellChange(e) {
   const { idx: idxStr, measure, wtype, field } = inp.dataset;
   const idx  = parseInt(idxStr);
   const item = getWineItem(wtype, idx);
+  item._dirty = true;
   const isBottle = measure === 'Bottle';
 
   let rawCost;
@@ -1565,10 +1610,12 @@ function syncWineSibling(tblId, idx, measure, wtype, field, val) {
 function applyWineGP() {
   const gp = parseFloat(document.getElementById('wineGP').value) / 100;
   if (isNaN(gp) || gp <= 0 || gp >= 1) return;
+  if (!warnDirtyTab('wine')) return;
   if (hasCustomSubcats('wine')) {
     if (!confirm('This will override any group GP% targets you have set.\n\nDo you wish to continue?')) return;
     clearCustomSubcats('wine');
   }
+  clearTabDirty('wine');
   for (const item of stillWineData) {
     item.gpBottle = gp; item.sellBottle = r2(sellFromGP(ec(item.costIncVAT,'wine'), gp));
     if (item.isBottle) {
@@ -1862,6 +1909,7 @@ function onKegCellChange(e) {
   const idx  = parseInt(inp.dataset.idx);
   const field = inp.dataset.field;
   const item = beerData[idx];
+  item._dirty = true;
 
   if (field === 'sellPint') {
     const v = parseFloat(inp.value); if (isNaN(v) || v <= 0) return;
@@ -1890,6 +1938,7 @@ function onBottleCellChange(e) {
   const inp = e.target;
   const tab = inp.dataset.tab, idx = parseInt(inp.dataset.idx), field = inp.dataset.field;
   const data = getDataForTab(tab), item = data[idx];
+  item._dirty = true;
   const cost = ec(item.costIncVAT, tab);
   if (field === 'sell') {
     const v = parseFloat(inp.value); if (isNaN(v) || v <= 0) return;
@@ -1908,10 +1957,12 @@ function onBottleCellChange(e) {
 function applyBottleGP(tab, inputId) {
   const gp = parseFloat(document.getElementById(inputId).value) / 100;
   if (isNaN(gp) || gp <= 0 || gp >= 1) return;
+  if (!warnDirtyTab(tab)) return;
   if (hasCustomSubcats(tab)) {
     if (!confirm('This will override any sub-category GP% targets you have set.\n\nDo you wish to continue?')) return;
     clearCustomSubcats(tab);
   }
+  clearTabDirty(tab);
   for (const item of getDataForTab(tab)) {
     item.gp = gp; item.sell = r2(sellFromGP(ec(item.costIncVAT, tab), gp));
   }
@@ -1921,10 +1972,12 @@ function applyBottleGP(tab, inputId) {
 function applyBeerGP() {
   const gp = parseFloat(document.getElementById('beerGP').value) / 100;
   if (isNaN(gp) || gp <= 0 || gp >= 1) return;
+  if (!warnDirtyTab('beer')) return;
   if (hasCustomSubcats('beer')) {
     if (!confirm('This will override any sub-category GP% targets you have set.\n\nDo you wish to continue?')) return;
     clearCustomSubcats('beer');
   }
+  clearTabDirty('beer');
   for (const item of beerData) {
     if (item.isKeg) {
       if (item.costPerPint) { item.gpPint = gp; item.sellPint = r2(sellFromGP(ec(item.costPerPint,'beer'), gp)); }
@@ -1984,6 +2037,8 @@ function addSubcatRow(tbody, label, colspan, gpOpts) {
 
 /** Apply a GP% to all items matching a given tab + groupKey. */
 function applySubcatGP(tab, groupKey, gp) {
+  if (!warnDirtyGroup(tab, groupKey)) return;
+  clearGroupDirty(tab, groupKey);
   markCustomSubcat(tab, groupKey);
 
   function itemKey(item) {

@@ -438,6 +438,14 @@
         <button onclick="exportAll(); closeExportMenu()">Export all categories</button>
       </div>
     </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-left:12px;">
+      <span id="headerUserName" style="font-size:12px;color:var(--text-light);opacity:0.85;"></span>
+      <button onclick="auth.signOut()" style="
+        background:transparent;border:1px solid rgba(255,255,255,0.25);border-radius:4px;
+        color:rgba(255,255,255,0.7);font-size:11px;padding:2px 8px;cursor:pointer;">
+        Sign out
+      </button>
+    </div>
   </div>
 </header>
 
@@ -858,13 +866,13 @@ function parseRows(rows) {
         const costPerHalf  = costPerPint  ? costPerPint / 2   : null;
         beerData.push({
           code, subCat, name: desc, size, isKeg: true,
-          litres, pintsPerKeg, kegCostIncVAT: civ,
+          litres, pintsPerKeg, kegCostExVAT: costPerUnit, kegCostIncVAT: civ,
           costPerPint, costPerHalf,
           gpPint:  gpBeer, sellPint:  costPerPint ? r2(sellFromGP(costPerPint,  gpBeer)) : null,
           gpHalf:  gpBeer, sellHalf:  costPerHalf ? r2(sellFromGP(costPerHalf,  gpBeer)) : null,
         });
       } else {
-        beerData.push({ code, subCat, name: desc, size, costIncVAT: civ, unitsPerCase,
+        beerData.push({ code, subCat, name: desc, size, unitPrice: costPerUnit, costIncVAT: civ, unitsPerCase,
                         gp: gpBeer, sell: r2(sellFromGP(civ, gpBeer)) });
       }
 
@@ -872,14 +880,14 @@ function parseRows(rows) {
     } else if (cat === 'soft') {
       const { costPerUnit, unitsPerCase } = calcBottleCost(unitPrice, packSize, size);
       const civ = costPerUnit * 1.2;
-      softData.push({ code, subCat, name: desc, size, costIncVAT: civ, unitsPerCase,
+      softData.push({ code, subCat, name: desc, size, unitPrice: costPerUnit, costIncVAT: civ, unitsPerCase,
                       gp: gpSoft, sell: r2(sellFromGP(civ, gpSoft)) });
 
     /* ── OTHER ── */
     } else {
       const { costPerUnit, unitsPerCase } = calcBottleCost(unitPrice, packSize, size);
       const civ = costPerUnit * 1.2;
-      otherData.push({ code, subCat, name: desc, size, costIncVAT: civ, unitsPerCase,
+      otherData.push({ code, subCat, name: desc, size, unitPrice: costPerUnit, costIncVAT: civ, unitsPerCase,
                        gp: gpOther, sell: r2(sellFromGP(civ, gpOther)), rawCat: category });
     }
   }
@@ -964,10 +972,11 @@ function renderSpirits() {
     c.textContent = label; if (cls) c.className = cls; return c;
   }
 
-  tr1.appendChild(th1('Code',      2, 'col-left cw-code'));
-  tr1.appendChild(th1('Product',   2, 'col-left'));
-  tr1.appendChild(th1('Size',      2, 'col-left cw-size'));
-  tr1.appendChild(th1('IM Unit £', 2, 'cw-unit'));
+  tr1.appendChild(th1('Code',          2, 'col-left cw-code'));
+  tr1.appendChild(th1('Product',       2, 'col-left'));
+  tr1.appendChild(th1('Size',          2, 'col-left cw-size'));
+  tr1.appendChild(th1('IM £ ex-VAT',   2, 'cw-unit'));
+  tr1.appendChild(th1('IM £ inc-VAT',  2, 'cw-unit'));
   tr1.appendChild(thGroup('25ml Serve', 2, 'g25'));
   tr1.appendChild(thGroup('35ml Serve', 2, 'g35'));
   tr1.appendChild(thGroup('50ml Serve', 2, 'g50'));
@@ -981,7 +990,7 @@ function renderSpirits() {
 
   const tbody = tbl.createTBody();
   for (const [subCat, items] of Object.entries(groups)) {
-    addSubcatRow(tbody, subCat, 10, { tab:'spirits', groupKey:subCat, defaultGP: items[0]?.gp25 });
+    addSubcatRow(tbody, subCat, 11, { tab:'spirits', groupKey:subCat, defaultGP: items[0]?.gp25 });
     for (const item of items) {
       const idx = spiritsData.indexOf(item);
       const row = tbody.insertRow();
@@ -989,6 +998,7 @@ function renderSpirits() {
       row.insertCell().outerHTML = `<td class="td-name" title="${item.name}">${item.name}</td>`;
       row.insertCell().outerHTML = `<td>${item.size}</td>`;
       row.insertCell().outerHTML = `<td class="td-num">£${item.unitPrice.toFixed(2)}</td>`;
+      row.insertCell().outerHTML = `<td class="td-num cost-cell">£${item.costIncVAT.toFixed(2)}</td>`;
       if (!item.meas) {
         const w = row.insertCell(); w.colSpan = 6;
         w.className = 'warn td-center';
@@ -1424,14 +1434,15 @@ function renderBottleTab(tab) {
   const tr = thead.insertRow();
 
   const colDefs = [
-    { label: 'Code',         cls: 'col-left cw-code'   },
-    { label: 'Sub-Category', cls: 'col-left cw-subcat' },
-    { label: 'Product',      cls: 'col-left'            },
-    { label: 'Format',       cls: 'col-left cw-format'  },
-    { label: 'Units/Case',   cls: 'cw-units'            },
-    { label: 'Cost/Unit £',  cls: 'cw-cost'             },
-    { label: 'Sell Price £', cls: 'cw-sell'             },
-    { label: 'GP %',         cls: 'cw-gp'               },
+    { label: 'Code',           cls: 'col-left cw-code'   },
+    { label: 'Sub-Category',   cls: 'col-left cw-subcat' },
+    { label: 'Product',        cls: 'col-left'            },
+    { label: 'Format',         cls: 'col-left cw-format'  },
+    { label: 'Units/Case',     cls: 'cw-units'            },
+    { label: 'IM £ ex-VAT',    cls: 'cw-cost'             },
+    { label: 'IM £ inc-VAT',   cls: 'cw-cost'             },
+    { label: 'Sell Price £',   cls: 'cw-sell'             },
+    { label: 'GP %',           cls: 'cw-gp'               },
   ];
   for (const col of colDefs) {
     const th = document.createElement('th');
@@ -1440,7 +1451,7 @@ function renderBottleTab(tab) {
 
   const tbody = tbl.createTBody();
   for (const [groupLabel, items] of Object.entries(groups)) {
-    addSubcatRow(tbody, groupLabel, 8, { tab, groupKey:groupLabel, defaultGP: items[0]?.gp });
+    addSubcatRow(tbody, groupLabel, 9, { tab, groupKey:groupLabel, defaultGP: items[0]?.gp });
     for (const item of items) {
       const globalIdx = data.indexOf(item);
       const row = tbody.insertRow();
@@ -1449,6 +1460,7 @@ function renderBottleTab(tab) {
       row.insertCell().outerHTML = `<td class="td-name" title="${item.name}">${item.name}</td>`;
       row.insertCell().outerHTML = `<td>${item.size}</td>`;
       row.insertCell().outerHTML = `<td class="td-center">${item.unitsPerCase || '—'}</td>`;
+      row.insertCell().outerHTML = `<td class="td-num">£${item.unitPrice.toFixed(3)}</td>`;
       row.insertCell().outerHTML = `<td class="cost-cell td-num">£${item.costIncVAT.toFixed(3)}</td>`;
 
       const sellTd = row.insertCell(); sellTd.className = 'editable sell';
@@ -1532,11 +1544,12 @@ function buildKegSection(kegItems) {
   }
 
   // Row 1: fixed cols (rowspan=2) + grouped headers
-  tr1.appendChild(th1('Code',        2, 'col-left cw-code'));
-  tr1.appendChild(th1('Sub-Category',2, 'col-left cw-subcat'));
-  tr1.appendChild(th1('Product',     2, 'col-left'));
-  tr1.appendChild(th1('Format',      2, 'col-left cw-format'));
-  tr1.appendChild(th1('Keg Cost £',  2, 'cw-cost'));
+  tr1.appendChild(th1('Code',           2, 'col-left cw-code'));
+  tr1.appendChild(th1('Sub-Category',  2, 'col-left cw-subcat'));
+  tr1.appendChild(th1('Product',       2, 'col-left'));
+  tr1.appendChild(th1('Format',        2, 'col-left cw-format'));
+  tr1.appendChild(th1('Keg £ ex-VAT',  2, 'cw-cost'));
+  tr1.appendChild(th1('Keg £ inc-VAT', 2, 'cw-cost'));
   tr1.appendChild(thG('Pint',     2, 'gpint'));
   tr1.appendChild(thG('½ Pint',   2, 'ghalf'));
 
@@ -1548,7 +1561,7 @@ function buildKegSection(kegItems) {
   const tbody = tbl.createTBody();
   const groups = groupBy(kegItems, 'subCat');
   for (const [subCat, items] of Object.entries(groups)) {
-    addSubcatRow(tbody, subCat, 9, { tab:'beer', groupKey:subCat, defaultGP: items[0]?.gpPint });
+    addSubcatRow(tbody, subCat, 10, { tab:'beer', groupKey:subCat, defaultGP: items[0]?.gpPint });
     for (const item of items) {
       const idx = beerData.indexOf(item);
       const row = tbody.insertRow();
@@ -1556,7 +1569,8 @@ function buildKegSection(kegItems) {
       row.insertCell().outerHTML = `<td>${item.subCat}</td>`;
       row.insertCell().outerHTML = `<td class="td-name">${item.name}</td>`;
       row.insertCell().outerHTML = `<td>${item.size}${item.pintsPerKeg ? ' <span style="color:var(--text-muted);font-size:12px">('+Math.round(item.pintsPerKeg)+' pts)</span>' : ''}</td>`;
-      row.insertCell().outerHTML = `<td class="cost-cell td-num">£${item.kegCostIncVAT.toFixed(3)}</td>`;
+      row.insertCell().outerHTML = `<td class="td-num">£${item.kegCostExVAT.toFixed(2)}</td>`;
+      row.insertCell().outerHTML = `<td class="cost-cell td-num">£${item.kegCostIncVAT.toFixed(2)}</td>`;
 
       // Pint Sell
       const pintSellTd = row.insertCell(); pintSellTd.className = 'editable sell';
@@ -1610,14 +1624,15 @@ function buildPackagedBeerSection(packItems) {
   const thead = tbl.createTHead();
   const tr = thead.insertRow();
   const colDefs = [
-    { label: 'Code',         cls: 'col-left cw-code'   },
-    { label: 'Sub-Category', cls: 'col-left cw-subcat' },
-    { label: 'Product',      cls: 'col-left'            },
-    { label: 'Format',       cls: 'col-left cw-format'  },
-    { label: 'Units/Case',   cls: 'cw-units'            },
-    { label: 'Cost/Unit £',  cls: 'cw-cost'             },
-    { label: 'Sell Price £', cls: 'cw-sell'             },
-    { label: 'GP %',         cls: 'cw-gp'               },
+    { label: 'Code',           cls: 'col-left cw-code'   },
+    { label: 'Sub-Category',   cls: 'col-left cw-subcat' },
+    { label: 'Product',        cls: 'col-left'            },
+    { label: 'Format',         cls: 'col-left cw-format'  },
+    { label: 'Units/Case',     cls: 'cw-units'            },
+    { label: 'IM £ ex-VAT',    cls: 'cw-cost'             },
+    { label: 'IM £ inc-VAT',   cls: 'cw-cost'             },
+    { label: 'Sell Price £',   cls: 'cw-sell'             },
+    { label: 'GP %',           cls: 'cw-gp'               },
   ];
   for (const col of colDefs) {
     const th = document.createElement('th');
@@ -1627,7 +1642,7 @@ function buildPackagedBeerSection(packItems) {
   const tbody = tbl.createTBody();
   const groups = groupBy(packItems, 'subCat');
   for (const [subCat, items] of Object.entries(groups)) {
-    addSubcatRow(tbody, subCat, 8, { tab:'beer', groupKey:subCat, defaultGP: items[0]?.gp });
+    addSubcatRow(tbody, subCat, 9, { tab:'beer', groupKey:subCat, defaultGP: items[0]?.gp });
     for (const item of items) {
       const idx = beerData.indexOf(item);
       const row = tbody.insertRow();
@@ -1636,6 +1651,7 @@ function buildPackagedBeerSection(packItems) {
       row.insertCell().outerHTML = `<td class="td-name">${item.name}</td>`;
       row.insertCell().outerHTML = `<td>${item.size}</td>`;
       row.insertCell().outerHTML = `<td class="td-center">${item.unitsPerCase || '—'}</td>`;
+      row.insertCell().outerHTML = `<td class="td-num">£${item.unitPrice.toFixed(3)}</td>`;
       row.insertCell().outerHTML = `<td class="cost-cell td-num">£${item.costIncVAT.toFixed(3)}</td>`;
 
       const sellTd = row.insertCell(); sellTd.className = 'editable sell';
@@ -2254,6 +2270,8 @@ document.getElementById('statusDate').textContent =
     if (user && user.email && user.email.toLowerCase().endsWith('@' + ALLOWED_DOMAIN)) {
       authScreen.style.display = 'none';
       appShell.style.display   = 'flex';
+      const nameEl = document.getElementById('headerUserName');
+      if (nameEl) nameEl.textContent = user.displayName || user.email;
     } else {
       if (user) {
         auth.signOut();

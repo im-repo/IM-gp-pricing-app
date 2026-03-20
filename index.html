@@ -8,21 +8,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-  <script type="module">
-    import { getApp }
-      from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
-             getDocs, getDoc, query, orderBy, serverTimestamp }
-      from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    try {
-      window._db = getFirestore(getApp(), 'im-gp-calculator');
-      window._fs = { collection, doc, addDoc, updateDoc, deleteDoc,
-                     getDocs, getDoc, query, orderBy, serverTimestamp };
-      if (firebase.auth().currentUser && typeof loadProfileList === 'function') loadProfileList();
-    } catch(e) {
-      console.error('Firestore init failed:', e);
-    }
-  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -2643,27 +2628,100 @@ document.getElementById('statusDate').textContent =
 
 <!-- ══════════════════════════ CUSTOMER PROFILES ══════════════════════════ -->
 <script>
+  /* Uses Firestore REST API — avoids compat/modular SDK registry conflicts */
+  const FS_BASE = 'https://firestore.googleapis.com/v1/projects/im-sales-tools/databases/im-gp-calculator/documents';
+
   window.pendingOverrides = null;
   let activeProfileId = null;
 
-  function _db()  { return window._db; }
-  function _fs()  { return window._fs; }
-  function _col(uid) { return _fs().collection(_db(), 'users', uid, 'profiles'); }
-  function _ref(uid, id) { return _fs().doc(_db(), 'users', uid, 'profiles', id); }
+  /* ── REST helpers ── */
+  async function fsToken() { return auth.currentUser.getIdToken(); }
+
+  async function fsGet(path) {
+    const r = await fetch(`${FS_BASE}/${path}`, { headers: { Authorization: `Bearer ${await fsToken()}` } });
+    if (!r.ok) throw new Error((await r.json()).error?.message || r.statusText);
+    return r.json();
+  }
+  async function fsList(path) {
+    const r = await fetch(`${FS_BASE}/${path}`, { headers: { Authorization: `Bearer ${await fsToken()}` } });
+    if (r.status === 404 || r.status === 200 && (await r.clone().text()) === '{}') return [];
+    if (!r.ok) throw new Error((await r.json()).error?.message || r.statusText);
+    const d = await r.json();
+    return Array.isArray(d.documents) ? d.documents : [];
+  }
+  async function fsCreate(path, data) {
+    const r = await fetch(`${FS_BASE}/${path}`, {
+      method: 'POST', headers: { Authorization: `Bearer ${await fsToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(toFsDoc(data))
+    });
+    if (!r.ok) throw new Error((await r.json()).error?.message || r.statusText);
+    return r.json();
+  }
+  async function fsPatch(path, data) {
+    const r = await fetch(`${FS_BASE}/${path}`, {
+      method: 'PATCH', headers: { Authorization: `Bearer ${await fsToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(toFsDoc(data))
+    });
+    if (!r.ok) throw new Error((await r.json()).error?.message || r.statusText);
+  }
+  async function fsDel(path) {
+    const r = await fetch(`${FS_BASE}/${path}`, { method: 'DELETE', headers: { Authorization: `Bearer ${await fsToken()}` } });
+    if (!r.ok) throw new Error((await r.json()).error?.message || r.statusText);
+  }
+
+  /* ── Firestore REST value encoding/decoding ── */
+  function toFsVal(v) {
+    if (v === null || v === undefined) return { nullValue: null };
+    if (typeof v === 'string')  return { stringValue: v };
+    if (typeof v === 'boolean') return { booleanValue: v };
+    if (typeof v === 'number')  return { doubleValue: v };
+    if (Array.isArray(v))       return { arrayValue: { values: v.map(toFsVal) } };
+    if (typeof v === 'object') {
+      const fields = {};
+      for (const [k, val] of Object.entries(v)) if (val !== undefined) fields[k] = toFsVal(val);
+      return { mapValue: { fields } };
+    }
+    return { stringValue: String(v) };
+  }
+  function toFsDoc(obj) {
+    const fields = {};
+    for (const [k, v] of Object.entries(obj)) if (v !== undefined) fields[k] = toFsVal(v);
+    return { fields };
+  }
+  function fromFsVal(v) {
+    if (!v) return null;
+    if ('nullValue'      in v) return null;
+    if ('stringValue'    in v) return v.stringValue;
+    if ('booleanValue'   in v) return v.booleanValue;
+    if ('doubleValue'    in v) return v.doubleValue;
+    if ('integerValue'   in v) return Number(v.integerValue);
+    if ('timestampValue' in v) return v.timestampValue;
+    if ('arrayValue'     in v) return (v.arrayValue.values || []).map(fromFsVal);
+    if ('mapValue'       in v) {
+      const o = {};
+      for (const [k, val] of Object.entries(v.mapValue.fields || {})) o[k] = fromFsVal(val);
+      return o;
+    }
+    return null;
+  }
+  function fromFsDoc(doc) {
+    const o = {};
+    for (const [k, v] of Object.entries(doc.fields || {})) o[k] = fromFsVal(v);
+    return o;
+  }
+  function docId(doc) { return doc.name.split('/').pop(); }
 
   /* ── Populate dropdown ── */
   async function loadProfileList() {
-    if (!window._db) return;
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
-    const fs   = _fs();
-    const snap = await fs.getDocs(fs.query(_col(uid), fs.orderBy('customerName')));
-    const sel  = document.getElementById('profileSelect');
+    const uid = auth.currentUser?.uid; if (!uid) return;
+    const docs = await fsList(`users/${uid}/profiles`);
+    const profiles = docs.map(d => ({ id: docId(d), ...fromFsDoc(d) }))
+                         .sort((a, b) => (a.customerName||'').localeCompare(b.customerName||''));
+    const sel = document.getElementById('profileSelect');
     while (sel.options.length > 1) sel.remove(1);
-    snap.forEach(d => {
+    profiles.forEach(p => {
       const opt = document.createElement('option');
-      opt.value = d.id; opt.textContent = d.data().customerName;
-      sel.appendChild(opt);
+      opt.value = p.id; opt.textContent = p.customerName; sel.appendChild(opt);
     });
     if (activeProfileId) sel.value = activeProfileId;
   }
@@ -2676,11 +2734,9 @@ document.getElementById('statusDate').textContent =
     activeProfileId = id || null;
     if (!id) { window.pendingOverrides = null; return; }
 
-    const uid     = auth.currentUser?.uid;
-    const docSnap = await _fs().getDoc(_ref(uid, id));
-    if (!docSnap.exists()) return;
-
-    const data = docSnap.data();
+    const uid  = auth.currentUser?.uid;
+    const snap = await fsGet(`users/${uid}/profiles/${id}`);
+    const data = fromFsDoc(snap);
     document.getElementById('customerName').value = data.customerName || '';
     const ov = data.overrides || {};
 
@@ -2768,25 +2824,20 @@ document.getElementById('statusDate').textContent =
 
   /* ── Save (create or update) ── */
   async function saveProfile() {
-    if (!window._db) { alert('Database not ready yet — please wait a moment and try again.'); return; }
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
+    const uid = auth.currentUser?.uid; if (!uid) return;
     const customerName = document.getElementById('customerName').value.trim();
     if (!customerName) { alert('Please enter a customer name before saving.'); return; }
 
     const btn = document.getElementById('saveProfileBtn');
     btn.textContent = 'Saving…'; btn.disabled = true;
 
-    const fs = _fs();
-    const payload = { customerName, overrides: buildOverrides(), updatedAt: fs.serverTimestamp() };
-
     try {
+      const payload = { customerName, overrides: buildOverrides(), updatedAt: new Date().toISOString() };
       if (activeProfileId) {
-        await fs.updateDoc(_ref(uid, activeProfileId), payload);
+        await fsPatch(`users/${uid}/profiles/${activeProfileId}`, payload);
       } else {
-        payload.createdAt = fs.serverTimestamp();
-        const ref = await fs.addDoc(_col(uid), payload);
-        activeProfileId = ref.id;
+        const created = await fsCreate(`users/${uid}/profiles`, { ...payload, createdAt: new Date().toISOString() });
+        activeProfileId = docId(created);
         document.getElementById('deleteProfileBtn').disabled = false;
       }
       await loadProfileList();
@@ -2805,9 +2856,8 @@ document.getElementById('statusDate').textContent =
     const name = document.getElementById('customerName').value.trim() || 'this profile';
     if (!confirm(`Delete the profile for "${name}"?\nThis cannot be undone.`)) return;
     const uid = auth.currentUser?.uid;
-    await _fs().deleteDoc(_ref(uid, activeProfileId));
-    activeProfileId = null;
-    window.pendingOverrides = null;
+    await fsDel(`users/${uid}/profiles/${activeProfileId}`);
+    activeProfileId = null; window.pendingOverrides = null;
     document.getElementById('profileSelect').value = '';
     document.getElementById('deleteProfileBtn').disabled = true;
     await loadProfileList();

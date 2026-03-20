@@ -8,6 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -72,8 +73,31 @@
     .brand-title { font-size: 14px; font-weight: 600; color: var(--text-light); }
     .brand-sub   { font-size: 10px; color: rgba(233,238,243,0.45); text-transform: uppercase; letter-spacing: 0.7px; }
 
-    .header-customer { display: flex; align-items: center; gap: 8px; flex: 1; }
+    .header-customer { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex: 1; }
     .header-customer label { font-size: 12px; color: rgba(233,238,243,0.6); white-space: nowrap; }
+
+    .profile-controls { display: flex; align-items: center; gap: 6px; }
+    .profile-controls > label { font-size: 11px; color: rgba(233,238,243,0.5); }
+    #profileSelect {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+      color: white; padding: 3px 8px; border-radius: 5px;
+      font-size: 12px; font-family: var(--font); width: 190px; cursor: pointer;
+    }
+    #profileSelect option { background: #1a2030; color: white; }
+    .btn-prof-save {
+      background: var(--accent); border: none; border-radius: 5px; color: white;
+      font-size: 11px; font-weight: 600; padding: 3px 10px; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-prof-save:hover:not(:disabled) { background: var(--accent-dark); }
+    .btn-prof-save:disabled { opacity: 0.4; cursor: default; }
+    .btn-prof-del {
+      background: transparent; border: 1px solid rgba(220,53,69,0.4);
+      border-radius: 5px; color: rgba(220,53,69,0.8); font-size: 11px;
+      padding: 3px 8px; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-prof-del:hover:not(:disabled) { background: rgba(220,53,69,0.15); border-color: #dc3545; color: #dc3545; }
+    .btn-prof-del:disabled { opacity: 0.3; cursor: default; }
 
     #customerName {
       background: rgba(255,255,255,0.08);
@@ -462,8 +486,18 @@
   </div>
 
   <div class="header-customer">
-    <label for="customerName">Customer:</label>
-    <input type="text" id="customerName" placeholder="Enter customer name…">
+    <div style="display:flex;align-items:center;gap:8px">
+      <label for="customerName">Customer:</label>
+      <input type="text" id="customerName" placeholder="Enter customer name…">
+    </div>
+    <div class="profile-controls">
+      <label>Profile:</label>
+      <select id="profileSelect" onchange="onProfileSelectChange()">
+        <option value="">— new profile —</option>
+      </select>
+      <button class="btn-prof-save" id="saveProfileBtn" onclick="saveProfile()" disabled>Save</button>
+      <button class="btn-prof-del"  id="deleteProfileBtn" onclick="deleteProfile()" disabled>Delete</button>
+    </div>
   </div>
 
   <div style="display:flex; flex-direction:column; gap:5px;">
@@ -1123,6 +1157,15 @@ function parseRows(rows) {
   renderBottleTab('soft');
   renderBottleTab('other');
   setStatus(`Loaded: ${spiritsData.length} spirits · ${stillWineData.length + sparkWineData.length} wine · ${beerData.length} beer · ${softData.length} soft drinks · ${otherData.length} other`);
+
+  // Apply saved customer profile if one was selected before the file was dropped
+  if (window.pendingOverrides) {
+    applyOverrides(window.pendingOverrides);
+    renderSpirits(); renderWine(); renderBeerTab();
+    renderBottleTab('soft'); renderBottleTab('other');
+    window.pendingOverrides = null;
+  }
+  document.getElementById('saveProfileBtn').disabled = false;
 }
 
 /* ─────────────── COUNTS ─────────────── */
@@ -2554,6 +2597,7 @@ document.getElementById('statusDate').textContent =
       appShell.style.display   = 'flex';
       const nameEl = document.getElementById('headerUserName');
       if (nameEl) nameEl.textContent = user.displayName || user.email;
+      if (typeof loadProfileList === 'function') loadProfileList();
     } else {
       if (user) {
         auth.signOut();
@@ -2580,6 +2624,179 @@ document.getElementById('statusDate').textContent =
     authError.textContent    = msg;
     authError.style.display  = 'block';
     authSpinner.style.display= 'none';
+  }
+</script>
+
+<!-- ══════════════════════════ CUSTOMER PROFILES ══════════════════════════ -->
+<script>
+  const db = firebase.firestore();
+  window.pendingOverrides = null;
+  let activeProfileId = null;
+
+  /* ── Populate dropdown ── */
+  async function loadProfileList() {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const snap = await db.collection('users').doc(uid).collection('profiles')
+                         .orderBy('customerName').get();
+    const sel = document.getElementById('profileSelect');
+    while (sel.options.length > 1) sel.remove(1);
+    snap.forEach(doc => {
+      const opt = document.createElement('option');
+      opt.value = doc.id;
+      opt.textContent = doc.data().customerName;
+      sel.appendChild(opt);
+    });
+    // Re-select previously active profile if still in list
+    if (activeProfileId) sel.value = activeProfileId;
+  }
+
+  /* ── Profile selected from dropdown ── */
+  async function onProfileSelectChange() {
+    const sel = document.getElementById('profileSelect');
+    const id  = sel.value;
+    document.getElementById('deleteProfileBtn').disabled = !id;
+    activeProfileId = id || null;
+
+    if (!id) { window.pendingOverrides = null; return; }
+
+    const uid = auth.currentUser?.uid;
+    const doc = await db.collection('users').doc(uid).collection('profiles').doc(id).get();
+    if (!doc.exists) return;
+
+    const data = doc.data();
+    document.getElementById('customerName').value = data.customerName || '';
+    const ov = data.overrides || {};
+
+    const dataLoaded = spiritsData.length > 0 || beerData.length > 0 ||
+                       stillWineData.length > 0 || softData.length > 0;
+    if (dataLoaded) {
+      applyOverrides(ov);
+      renderSpirits(); renderWine(); renderBeerTab();
+      renderBottleTab('soft'); renderBottleTab('other');
+    } else {
+      window.pendingOverrides = ov;
+    }
+  }
+
+  /* ── Apply saved sell prices to all data arrays ── */
+  function applyOverrides(ov) {
+    for (const it of spiritsData) {
+      const o = ov[it.code]; if (!o) continue;
+      if (o.sell25 != null && it.costPer25) { it.sell25 = o.sell25; it.gp25 = r4(gpFromSell(it.costPer25, o.sell25)); }
+      if (o.sell35 != null && it.costPer35) { it.sell35 = o.sell35; it.gp35 = r4(gpFromSell(it.costPer35, o.sell35)); }
+      if (o.sell50 != null && it.costPer50) { it.sell50 = o.sell50; it.gp50 = r4(gpFromSell(it.costPer50, o.sell50)); }
+    }
+    for (const it of stillWineData) {
+      const o = ov[it.code]; if (!o) continue;
+      if (o.sell125    != null && it.costPer125) { it.sell125    = o.sell125;    it.gp125    = r4(gpFromSell(it.costPer125, o.sell125)); }
+      if (o.sell175    != null && it.costPer175) { it.sell175    = o.sell175;    it.gp175    = r4(gpFromSell(it.costPer175, o.sell175)); }
+      if (o.sell250    != null && it.costPer250) { it.sell250    = o.sell250;    it.gp250    = r4(gpFromSell(it.costPer250, o.sell250)); }
+      if (o.sellBottle != null)                  { it.sellBottle = o.sellBottle; it.gpBottle = r4(gpFromSell(it.costIncVAT, o.sellBottle)); }
+    }
+    for (const it of sparkWineData) {
+      const o = ov[it.code]; if (!o) continue;
+      if (o.sell125    != null && it.costPer125) { it.sell125    = o.sell125;    it.gp125    = r4(gpFromSell(it.costPer125, o.sell125)); }
+      if (o.sellBottle != null)                  { it.sellBottle = o.sellBottle; it.gpBottle = r4(gpFromSell(it.costIncVAT, o.sellBottle)); }
+    }
+    for (const it of beerData) {
+      const o = ov[it.code]; if (!o) continue;
+      if (it.isKeg) {
+        if (o.sellPint != null && it.costPerPint) { it.sellPint = o.sellPint; it.gpPint = r4(gpFromSell(it.costPerPint, o.sellPint)); }
+        if (o.sellHalf != null && it.costPerHalf) { it.sellHalf = o.sellHalf; it.gpHalf = r4(gpFromSell(it.costPerHalf, o.sellHalf)); }
+      } else {
+        if (o.sell != null) { it.sell = o.sell; it.gp = r4(gpFromSell(it.costIncVAT, o.sell)); }
+      }
+    }
+    for (const it of [...softData, ...otherData]) {
+      const o = ov[it.code]; if (!o) continue;
+      if (o.sell != null) { it.sell = o.sell; it.gp = r4(gpFromSell(it.costIncVAT, o.sell)); }
+    }
+  }
+
+  /* ── Snapshot current sell prices into override object ── */
+  function buildOverrides() {
+    const ov = {};
+    for (const it of spiritsData) {
+      ov[it.code] = {};
+      if (it.sell25  != null) ov[it.code].sell25  = it.sell25;
+      if (it.sell35  != null) ov[it.code].sell35  = it.sell35;
+      if (it.sell50  != null) ov[it.code].sell50  = it.sell50;
+    }
+    for (const it of stillWineData) {
+      ov[it.code] = {};
+      if (it.sell125    != null) ov[it.code].sell125    = it.sell125;
+      if (it.sell175    != null) ov[it.code].sell175    = it.sell175;
+      if (it.sell250    != null) ov[it.code].sell250    = it.sell250;
+      if (it.sellBottle != null) ov[it.code].sellBottle = it.sellBottle;
+    }
+    for (const it of sparkWineData) {
+      ov[it.code] = {};
+      if (it.sell125    != null) ov[it.code].sell125    = it.sell125;
+      if (it.sellBottle != null) ov[it.code].sellBottle = it.sellBottle;
+    }
+    for (const it of beerData) {
+      ov[it.code] = {};
+      if (it.isKeg) {
+        if (it.sellPint != null) ov[it.code].sellPint = it.sellPint;
+        if (it.sellHalf != null) ov[it.code].sellHalf = it.sellHalf;
+      } else {
+        if (it.sell != null) ov[it.code].sell = it.sell;
+      }
+    }
+    for (const it of [...softData, ...otherData]) {
+      if (it.sell != null) ov[it.code] = { sell: it.sell };
+    }
+    return ov;
+  }
+
+  /* ── Save (create or update) ── */
+  async function saveProfile() {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const customerName = document.getElementById('customerName').value.trim();
+    if (!customerName) { alert('Please enter a customer name before saving.'); return; }
+
+    const btn = document.getElementById('saveProfileBtn');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+
+    const payload = {
+      customerName,
+      overrides:  buildOverrides(),
+      updatedAt:  firebase.firestore.FieldValue.serverTimestamp(),
+    };
+
+    try {
+      if (activeProfileId) {
+        await db.collection('users').doc(uid).collection('profiles').doc(activeProfileId).update(payload);
+      } else {
+        payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        const ref = await db.collection('users').doc(uid).collection('profiles').add(payload);
+        activeProfileId = ref.id;
+        document.getElementById('deleteProfileBtn').disabled = false;
+      }
+      await loadProfileList();
+      document.getElementById('profileSelect').value = activeProfileId;
+      btn.textContent = 'Saved ✓';
+      setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 2000);
+    } catch (err) {
+      btn.textContent = 'Save'; btn.disabled = false;
+      alert('Save failed: ' + err.message);
+    }
+  }
+
+  /* ── Delete ── */
+  async function deleteProfile() {
+    if (!activeProfileId) return;
+    const name = document.getElementById('customerName').value.trim() || 'this profile';
+    if (!confirm(`Delete the profile for "${name}"?\nThis cannot be undone.`)) return;
+    const uid = auth.currentUser?.uid;
+    await db.collection('users').doc(uid).collection('profiles').doc(activeProfileId).delete();
+    activeProfileId = null;
+    window.pendingOverrides = null;
+    document.getElementById('profileSelect').value = '';
+    document.getElementById('deleteProfileBtn').disabled = true;
+    await loadProfileList();
   }
 </script>
 </body>

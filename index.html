@@ -134,6 +134,32 @@
     }
     .pbi-link:hover { background: rgba(242,200,17,0.18); border-color: rgba(242,200,17,0.6); }
 
+    /* ── New file dialog ── */
+    #newFileDialog {
+      display: none; position: fixed; inset: 0; z-index: 10000;
+      background: rgba(0,0,0,0.55); align-items: center; justify-content: center;
+    }
+    #newFileDialog.open { display: flex; }
+    .nfd-box {
+      background: white; border-radius: 10px; padding: 28px 32px;
+      width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.25); font-family: var(--font);
+    }
+    .nfd-box h3  { font-size: 16px; color: var(--text-heading); margin-bottom: 8px; }
+    .nfd-box p   { font-size: 13px; color: var(--text-muted); margin-bottom: 22px; line-height: 1.5; }
+    .nfd-actions { display: flex; flex-direction: column; gap: 8px; }
+    .nfd-btn {
+      width: 100%; padding: 10px 16px; border-radius: 7px; border: none;
+      font-size: 13px; font-family: var(--font); cursor: pointer; text-align: left;
+      transition: background 0.15s;
+    }
+    .nfd-btn-new    { background: var(--accent); color: white; font-weight: 600; }
+    .nfd-btn-new:hover { background: var(--accent-dark); }
+    .nfd-btn-reload { background: var(--bg-alt); color: var(--text-body); border: 1px solid var(--border-light); }
+    .nfd-btn-reload:hover { background: #dde1e6; }
+    .nfd-btn-cancel { background: transparent; color: var(--text-muted); font-size: 12px; text-align: center; }
+    .nfd-btn-cancel:hover { color: var(--text-body); }
+    .nfd-btn small  { display: block; font-weight: 400; opacity: 0.75; font-size: 11px; margin-top: 2px; }
+
     /* ── Name prompt modal ── */
     #nameModal {
       display: none; position: fixed; inset: 0; z-index: 10000;
@@ -744,6 +770,25 @@
 
 </div><!-- /#appShell -->
 
+<!-- ══════════════════════════ NEW FILE DIALOG ══════════════════════════ -->
+<div id="newFileDialog">
+  <div class="nfd-box">
+    <h3>Load new price file</h3>
+    <p>You already have data loaded for <strong id="nfdCustomerName">this customer</strong>. What would you like to do?</p>
+    <div class="nfd-actions">
+      <button class="nfd-btn nfd-btn-new" onclick="nfdNewSession()">
+        New customer session
+        <small>Clears current work and starts fresh</small>
+      </button>
+      <button class="nfd-btn nfd-btn-reload" onclick="nfdReloadCurrent()">
+        Reload for current customer
+        <small>Updates costs — saved prices will be re-applied</small>
+      </button>
+      <button class="nfd-btn nfd-btn-cancel" onclick="nfdCancel()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════════════════ NAME PROMPT MODAL ══════════════════════════ -->
 <div id="nameModal">
   <div class="name-modal-box">
@@ -995,9 +1040,52 @@ function handleDrop(e) {
   e.preventDefault();
   document.getElementById('uploadZone').classList.remove('drag-over');
   const file = e.dataTransfer.files[0];
-  if (file) processFile(file);
+  if (file) checkBeforeLoad(file);
 }
-function handleFileSelect(e) { const file = e.target.files[0]; if (file) processFile(file); }
+function handleFileSelect(e) { const file = e.target.files[0]; if (file) checkBeforeLoad(file); }
+
+let _pendingFile = null;
+
+function checkBeforeLoad(file) {
+  const hasData = spiritsData.length > 0 || beerData.length > 0 ||
+                  stillWineData.length > 0 || softData.length > 0;
+  if (!hasData) { processFile(file); return; }
+
+  _pendingFile = file;
+  const name = document.getElementById('customerName').value.trim();
+  document.getElementById('nfdCustomerName').textContent = name || 'this customer';
+  document.getElementById('newFileDialog').classList.add('open');
+}
+
+function nfdNewSession() {
+  document.getElementById('newFileDialog').classList.remove('open');
+  // Clear all customer context
+  document.getElementById('customerName').value = '';
+  document.getElementById('profileSelect').value = '';
+  document.getElementById('deleteProfileBtn').disabled = true;
+  activeProfileId = null;
+  window.pendingOverrides = null;
+  if (_pendingFile) { processFile(_pendingFile); _pendingFile = null; }
+}
+
+async function nfdReloadCurrent() {
+  document.getElementById('newFileDialog').classList.remove('open');
+  // If a profile is saved, pre-load its overrides so they re-apply after the file loads
+  if (activeProfileId && auth.currentUser) {
+    try {
+      const uid  = auth.currentUser.uid;
+      const snap = await fsGet(`users/${uid}/profiles/${activeProfileId}`);
+      window.pendingOverrides = (fromFsDoc(snap)).overrides || {};
+    } catch(e) { /* proceed without overrides if fetch fails */ }
+  }
+  if (_pendingFile) { processFile(_pendingFile); _pendingFile = null; }
+}
+
+function nfdCancel() {
+  document.getElementById('newFileDialog').classList.remove('open');
+  document.getElementById('fileInput').value = '';
+  _pendingFile = null;
+}
 
 function processFile(file) {
   document.getElementById('uploadLabel').textContent = '⏳ Reading ' + file.name + '…';

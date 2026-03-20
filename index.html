@@ -2109,9 +2109,9 @@ async function exportCurrent() {
   } else if (tab === 'beer' && beerData.length > 0) {
     appendBeerSheet(wb, cn, fml);
   } else if (tab === 'soft' && softData.length > 0) {
-    appendBottleSheet(wb, softData, 'Soft Drinks', cn, fml);
+    appendBottleSheet(wb, softData, 'Soft Drinks', cn, fml, 'soft');
   } else if (tab === 'other' && otherData.length > 0) {
-    appendBottleSheet(wb, otherData, 'Other', cn, fml);
+    appendBottleSheet(wb, otherData, 'Other', cn, fml, 'other');
   } else {
     alert('No data to export for this tab.'); return;
   }
@@ -2129,8 +2129,8 @@ async function exportWorkbook(fml = false, cn) {
   if (spiritsData.length > 0)   addSpiritsSheet(wb, cn, fml);
   addWineSheet(wb, cn, fml);
   appendBeerSheet(wb, cn, fml);
-  appendBottleSheet(wb, softData,  'Soft Drinks',  cn, fml);
-  if (otherData.length > 0) appendBottleSheet(wb, otherData, 'Other', cn, fml);
+  appendBottleSheet(wb, softData,  'Soft Drinks',  cn, fml, 'soft');
+  if (otherData.length > 0) appendBottleSheet(wb, otherData, 'Other', cn, fml, 'other');
 
   const filename = `${cn.replace(/[^a-zA-Z0-9 ]/g,'_')} GP Pricing.xlsx`;
   await downloadWorkbook(wb, filename);
@@ -2212,12 +2212,15 @@ function addSpiritsSheet(wb, cn, fml) {
   const rows = [[cn],[],
     ['Code','Product','Size','IM Unit £','Cost Inc VAT',
      '25ml Sell £','25ml GP%','35ml Sell £','35ml GP%','50ml Sell £','50ml GP%']];
-  const itemMap = [null, null, null]; // parallel: null = header/subcat, item obj = data row
+  const itemMap = [null, null, null];
   for (const [sc, items] of Object.entries(groupBy(spiritsData,'subCat'))) {
     rows.push([sc]); itemMap.push(null);
     for (const it of items) {
+      const eg25 = it.sell25 != null && it.costPer25 ? r4(gpFromSell(ec(it.costPer25,'spirits'), it.sell25)) : it.gp25;
+      const eg35 = it.sell35 != null && it.costPer35 ? r4(gpFromSell(ec(it.costPer35,'spirits'), it.sell35)) : it.gp35;
+      const eg50 = it.sell50 != null && it.costPer50 ? r4(gpFromSell(ec(it.costPer50,'spirits'), it.sell50)) : it.gp50;
       rows.push([it.code,it.name,it.size,it.unitPrice,it.costIncVAT,
-                 it.sell25,it.gp25,it.sell35,it.gp35,it.sell50,it.gp50]);
+                 it.sell25,eg25,it.sell35,eg35,it.sell50,eg50]);
       itemMap.push(it);
     }
   }
@@ -2227,13 +2230,12 @@ function addSpiritsSheet(wb, cn, fml) {
   applySheetFormatting(ws, 11);
   fmtSpiritsSheet(ws, rows);
   if (fml) {
-    // Cols: F=25mlSell(5) G=25mlGP(6) H=35mlSell(7) I=35mlGP(8) J=50mlSell(9) K=50mlGP(10)
     for (let R = 3; R < rows.length; R++) {
       const it = itemMap[R]; if (!it) continue;
-      const r = R + 1; // Excel 1-based row
-      if (it.costPer25) setFormula(ws,R,6,  `=(F${r}-${it.costPer25.toFixed(6)})/F${r}`, '0.0%', it.gp25);
-      if (it.costPer35) setFormula(ws,R,8,  `=(H${r}-${it.costPer35.toFixed(6)})/H${r}`, '0.0%', it.gp35);
-      if (it.costPer50) setFormula(ws,R,10, `=(J${r}-${it.costPer50.toFixed(6)})/J${r}`, '0.0%', it.gp50);
+      const r = R + 1;
+      if (it.costPer25) setFormula(ws,R,6,  `=(F${r}-${ec(it.costPer25,'spirits').toFixed(6)})/F${r}`, '0.0%', rows[R][6]);
+      if (it.costPer35) setFormula(ws,R,8,  `=(H${r}-${ec(it.costPer35,'spirits').toFixed(6)})/H${r}`, '0.0%', rows[R][8]);
+      if (it.costPer50) setFormula(ws,R,10, `=(J${r}-${ec(it.costPer50,'spirits').toFixed(6)})/J${r}`, '0.0%', rows[R][10]);
     }
   }
   XLSX.utils.book_append_sheet(wb, ws, 'Spirits');
@@ -2276,9 +2278,13 @@ function addWineSheet(wb, cn, fml) {
     rows.push([label]); itemMap.push(null);
     for (const vi of viewItems) {
       const it = vi.item;
+      const eg125  = it.sell125   != null && it.costPer125 ? r4(gpFromSell(ec(it.costPer125,  'wine'), it.sell125))   : it.gp125;
+      const eg175  = it.sell175   != null && it.costPer175 ? r4(gpFromSell(ec(it.costPer175,  'wine'), it.sell175))   : it.gp175;
+      const eg250  = it.sell250   != null && it.costPer250 ? r4(gpFromSell(ec(it.costPer250,  'wine'), it.sell250))   : it.gp250;
+      const egBtl  = it.sellBottle != null                  ? r4(gpFromSell(ec(it.costIncVAT, 'wine'), it.sellBottle)) : it.gpBottle;
       rows.push([it.code, it.country||'', it.name, it.unitPrice, it.costIncVAT,
-        it.sell125, it.gp125, it.sell175, it.gp175,
-        it.sell250, it.gp250, it.sellBottle, it.gpBottle]);
+        it.sell125, eg125, it.sell175, eg175,
+        it.sell250, eg250, it.sellBottle, egBtl]);
       itemMap.push(vi);
     }
   }
@@ -2292,9 +2298,13 @@ function addWineSheet(wb, cn, fml) {
     rows.push([sc]); itemMap.push(null);
     for (const vi of viewItems) {
       const it = vi.item;
+      const eg125  = it.sell125    != null && it.costPer125 ? r4(gpFromSell(ec(it.costPer125, 'wine'), it.sell125))   : it.gp125;
+      const eg175  = it.sell175    != null && it.costPer175 ? r4(gpFromSell(ec(it.costPer175, 'wine'), it.sell175))   : it.gp175;
+      const eg250  = it.sell250    != null && it.costPer250 ? r4(gpFromSell(ec(it.costPer250, 'wine'), it.sell250))   : it.gp250;
+      const egBtl  = it.sellBottle != null                  ? r4(gpFromSell(ec(it.costIncVAT, 'wine'), it.sellBottle)) : it.gpBottle;
       rows.push([it.code, '', it.name, it.unitPrice, it.costIncVAT,
-        it.sell125, it.gp125, it.sell175, it.gp175,
-        it.sell250, it.gp250, it.sellBottle, it.gpBottle]);
+        it.sell125, eg125, it.sell175, eg175,
+        it.sell250, eg250, it.sellBottle, egBtl]);
       itemMap.push(vi);
     }
   }
@@ -2312,17 +2322,15 @@ function addWineSheet(wb, cn, fml) {
   }
 
   if (fml) {
-    // F=5(125Sell) G=6(125GP) H=7(175Sell) I=8(175GP) J=9(250Sell) K=10(250GP) L=11(BtlSell) M=12(BtlGP)
-    // E col = 4 (costIncVAT)
     for (let R = 3; R < rows.length; R++) {
       const vi = itemMap[R]; if (!vi) continue;
       const it = vi.item; const r = R + 1;
-      if (it.costPer125) setFormula(ws,R,6,  `=(F${r}-${it.costPer125.toFixed(6)})/F${r}`, '0.0%', it.gp125);
+      if (it.costPer125) setFormula(ws,R,6,  `=(F${r}-${ec(it.costPer125,'wine').toFixed(6)})/F${r}`, '0.0%', rows[R][6]);
       if (vi.wtype === 'still') {
-        if (it.costPer175) setFormula(ws,R,8,  `=(H${r}-${it.costPer175.toFixed(6)})/H${r}`, '0.0%', it.gp175);
-        if (it.costPer250) setFormula(ws,R,10, `=(J${r}-${it.costPer250.toFixed(6)})/J${r}`, '0.0%', it.gp250);
+        if (it.costPer175) setFormula(ws,R,8,  `=(H${r}-${ec(it.costPer175,'wine').toFixed(6)})/H${r}`, '0.0%', rows[R][8]);
+        if (it.costPer250) setFormula(ws,R,10, `=(J${r}-${ec(it.costPer250,'wine').toFixed(6)})/J${r}`, '0.0%', rows[R][10]);
       }
-      setFormula(ws,R,12, `=(L${r}-E${r})/L${r}`, '0.0%', it.gpBottle);
+      setFormula(ws,R,12, `=(L${r}-${ec(it.costIncVAT,'wine').toFixed(6)})/L${r}`, '0.0%', rows[R][12]);
     }
   }
 
@@ -2361,9 +2369,12 @@ function appendBeerSheet(wb, cn, fml) {
     const kegHeaderRow = rows.length - 1; // row index of keg header
     for (const [gl, items] of Object.entries(kegGroups)) {
       rows.push([gl]);
-      for (const it of items)
+      for (const it of items) {
+        const egPint = it.sellPint != null && it.costPerPint ? r4(gpFromSell(ec(it.costPerPint,'beer'), it.sellPint)) : it.gpPint;
+        const egHalf = it.sellHalf != null && it.costPerHalf ? r4(gpFromSell(ec(it.costPerHalf,'beer'), it.sellHalf)) : it.gpHalf;
         rows.push([it.code, it.subCat, it.name, it.size,
-                   it.kegCostIncVAT, it.sellPint, it.gpPint, it.sellHalf, it.gpHalf]);
+                   it.kegCostIncVAT, it.sellPint, egPint, it.sellHalf, egHalf]);
+      }
     }
     rows.push([]); // blank separator
   }
@@ -2378,8 +2389,10 @@ function appendBeerSheet(wb, cn, fml) {
     }
     for (const [gl, items] of Object.entries(packGroups)) {
       rows.push([gl]);
-      for (const it of items)
-        rows.push([it.code, it.subCat, it.name, it.size, it.unitsPerCase||'', it.costIncVAT, it.sell, it.gp]);
+      for (const it of items) {
+        const egp = it.sell != null ? r4(gpFromSell(ec(it.costIncVAT,'beer'), it.sell)) : it.gp;
+        rows.push([it.code, it.subCat, it.name, it.size, it.unitsPerCase||'', it.costIncVAT, it.sell, egp]);
+      }
     }
   }
 
@@ -2400,17 +2413,18 @@ function appendBeerSheet(wb, cn, fml) {
       fmtCell(ws,R,7,'£#,##0.00'); fmtCell(ws,R,8,'0.0%');
       if (fml) {
         const r = R + 1;
-        const pintCost = beerData.find(i => i.isKeg && i.name === row[2])?.costPerPint;
-        const halfCost = beerData.find(i => i.isKeg && i.name === row[2])?.costPerHalf;
-        if (pintCost != null) setFormula(ws,R,6,`=(F${r}-${pintCost.toFixed(6)})/F${r}`,'0.0%',row[6]);
-        if (halfCost != null) setFormula(ws,R,8,`=(H${r}-${halfCost.toFixed(6)})/H${r}`,'0.0%',row[8]);
+        const kegItem = beerData.find(i => i.isKeg && i.name === row[2]);
+        if (kegItem?.costPerPint != null) setFormula(ws,R,6,`=(F${r}-${ec(kegItem.costPerPint,'beer').toFixed(6)})/F${r}`,'0.0%',row[6]);
+        if (kegItem?.costPerHalf != null) setFormula(ws,R,8,`=(H${r}-${ec(kegItem.costPerHalf,'beer').toFixed(6)})/H${r}`,'0.0%',row[8]);
       }
     } else if (row.length === 8 && typeof row[5] === 'number') {
       // Packaged beer row: cols 5=cost, 6=sell, 7=gp
       fmtCell(ws,R,5,'£#,##0.00'); fmtCell(ws,R,6,'£#,##0.00'); fmtCell(ws,R,7,'0.0%');
       if (fml) {
         const r = R + 1;
-        setFormula(ws,R,7,`=(G${r}-F${r})/G${r}`,'0.0%',row[7]);
+        const packItem = beerData.find(i => !i.isKeg && i.name === row[2]);
+        const effCost = packItem ? ec(packItem.costIncVAT,'beer').toFixed(6) : null;
+        if (effCost) setFormula(ws,R,7,`=(G${r}-${effCost})/G${r}`,'0.0%',row[7]);
       }
     }
   }
@@ -2418,33 +2432,36 @@ function appendBeerSheet(wb, cn, fml) {
   XLSX.utils.book_append_sheet(wb, ws, 'Beer & Cider');
 }
 
-function appendBottleSheet(wb, data, sheetName, cn, fml) {
+function appendBottleSheet(wb, data, sheetName, cn, fml, tab) {
   if (data.length === 0) return;
   const rows = [[cn],[],
     ['Code','Sub-Category','Product','Format','Units/Case','IM Cost/Unit £','Sell Price £','GP%']];
+  const itemMap = [null, null, null];
   const groups = {};
   for (const item of data) {
     const key = item.rawCat ? item.rawCat + ' — ' + item.subCat : item.subCat;
     if (!groups[key]) groups[key] = []; groups[key].push(item);
   }
   for (const [gl, items] of Object.entries(groups)) {
-    rows.push([gl]);
-    for (const it of items) rows.push([it.code,it.subCat,it.name,it.size,
-                                        it.unitsPerCase||'',it.costIncVAT,it.sell,it.gp]);
+    rows.push([gl]); itemMap.push(null);
+    for (const it of items) {
+      const egp = it.sell != null ? r4(gpFromSell(ec(it.costIncVAT, tab), it.sell)) : it.gp;
+      rows.push([it.code,it.subCat,it.name,it.size, it.unitsPerCase||'',it.costIncVAT,it.sell,egp]);
+      itemMap.push(it);
+    }
   }
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [{wch:10},{wch:18},{wch:45},{wch:18},{wch:10},{wch:14},{wch:12},{wch:10}];
   applySheetFormatting(ws, 8);
-  // Cols: A=Code B=SubCat C=Product D=Format E=Units F=Cost G=Sell H=GP
   const range = XLSX.utils.decode_range(ws['!ref']);
   for (let R = 3; R <= range.e.r; R++) {
     if (!rows[R] || rows[R].length <= 1) continue;
     [5,6].forEach(C => fmtCell(ws,R,C,'£#,##0.00'));
     fmtCell(ws,R,7,'0.0%');
-    // Formula mode: GP% = (Sell - Cost) / Sell — both columns are in the sheet
     if (fml) {
+      const it = itemMap[R]; if (!it) continue;
       const r = R + 1;
-      setFormula(ws,R,7, `=(G${r}-F${r})/G${r}`, '0.0%', rows[R][7]);
+      setFormula(ws,R,7, `=(G${r}-${ec(it.costIncVAT, tab).toFixed(6)})/G${r}`, '0.0%', rows[R][7]);
     }
   }
   XLSX.utils.book_append_sheet(wb, ws, sheetName);

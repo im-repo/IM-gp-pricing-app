@@ -9,14 +9,19 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script type="module">
+    import { getApp }
+      from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
     import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
              getDocs, getDoc, query, orderBy, serverTimestamp }
       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    window._db = getFirestore(firebase.app(), 'im-gp-calculator');
-    window._fs = { collection, doc, addDoc, updateDoc, deleteDoc,
-                   getDocs, getDoc, query, orderBy, serverTimestamp };
-    // If auth already resolved before this module loaded, trigger the list now
-    if (firebase.auth().currentUser && typeof loadProfileList === 'function') loadProfileList();
+    try {
+      window._db = getFirestore(getApp(), 'im-gp-calculator');
+      window._fs = { collection, doc, addDoc, updateDoc, deleteDoc,
+                     getDocs, getDoc, query, orderBy, serverTimestamp };
+      if (firebase.auth().currentUser && typeof loadProfileList === 'function') loadProfileList();
+    } catch(e) {
+      console.error('Firestore init failed:', e);
+    }
   </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2763,6 +2768,7 @@ document.getElementById('statusDate').textContent =
 
   /* ── Save (create or update) ── */
   async function saveProfile() {
+    if (!window._db) { alert('Database not ready yet — please wait a moment and try again.'); return; }
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     const customerName = document.getElementById('customerName').value.trim();

@@ -100,6 +100,50 @@
     .upload-icon { font-size: 17px; }
     #fileInput { display: none; }
 
+    .pbi-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; color: #F2C811; text-decoration: none;
+      padding: 3px 8px; border-radius: 4px;
+      border: 1px solid rgba(242,200,17,0.3);
+      background: rgba(242,200,17,0.08);
+      transition: background 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .pbi-link:hover { background: rgba(242,200,17,0.18); border-color: rgba(242,200,17,0.6); }
+
+    /* ── Name prompt modal ── */
+    #nameModal {
+      display: none; position: fixed; inset: 0; z-index: 10000;
+      background: rgba(0,0,0,0.55); align-items: center; justify-content: center;
+    }
+    #nameModal.open { display: flex; }
+    .name-modal-box {
+      background: white; border-radius: 10px; padding: 28px 32px;
+      width: 360px; box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      font-family: var(--font);
+    }
+    .name-modal-box h3 { font-size: 16px; color: var(--text-heading); margin-bottom: 6px; }
+    .name-modal-box p  { font-size: 13px; color: var(--text-muted); margin-bottom: 18px; }
+    .name-modal-box input {
+      width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-light);
+      border-radius: 6px; font-size: 14px; font-family: var(--font);
+      margin-bottom: 16px; transition: border-color 0.2s;
+    }
+    .name-modal-box input:focus { outline: none; border-color: var(--accent); }
+    .name-modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .name-modal-actions .btn-skip {
+      background: none; border: 1px solid var(--border-light);
+      color: var(--text-muted); padding: 7px 14px; border-radius: 6px;
+      font-size: 13px; cursor: pointer;
+    }
+    .name-modal-actions .btn-skip:hover { border-color: #aaa; color: var(--text-body); }
+    .name-modal-actions .btn-go {
+      background: var(--accent); color: white; border: none;
+      padding: 7px 18px; border-radius: 6px; font-size: 13px;
+      font-weight: 600; cursor: pointer;
+    }
+    .name-modal-actions .btn-go:hover { background: var(--accent-dark); }
+
     .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
     /* ── Tabs ── */
@@ -415,15 +459,25 @@
     <input type="text" id="customerName" placeholder="Enter customer name…">
   </div>
 
-  <div class="upload-zone" id="uploadZone"
-    onclick="document.getElementById('fileInput').click()"
-    ondragover="handleDragOver(event)"
-    ondragleave="handleDragLeave(event)"
-    ondrop="handleDrop(event)">
-    <span class="upload-icon">📂</span>
-    <span id="uploadLabel">Drop Power BI pricing file here, or click to browse</span>
+  <div style="display:flex; flex-direction:column; gap:5px;">
+    <div class="upload-zone" id="uploadZone"
+      onclick="document.getElementById('fileInput').click()"
+      ondragover="handleDragOver(event)"
+      ondragleave="handleDragLeave(event)"
+      ondrop="handleDrop(event)">
+      <span class="upload-icon">📂</span>
+      <span id="uploadLabel">Drop Power BI pricing file here, or click to browse</span>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" onchange="handleFileSelect(event)">
+    <a class="pbi-link" href="https://app.powerbi.com/groups/0b0b56b8-53ea-4713-a41f-b839968cdec6/reports/5f2d2fe1-382d-40ea-a9e8-65e94b7aca03/ReportSection820fe06f270657a544be?experience=power-bi" target="_blank" rel="noopener">
+      <svg width="13" height="13" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="7" width="4" height="10" rx="1" fill="#F2C811"/>
+        <rect x="7" y="4" width="4" height="13" rx="1" fill="#F2C811" opacity="0.85"/>
+        <rect x="13" y="1" width="4" height="16" rx="1" fill="#F2C811" opacity="0.65"/>
+      </svg>
+      Generate customer price file in Power BI ↗
+    </a>
   </div>
-  <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" onchange="handleFileSelect(event)">
 
   <div class="header-actions">
     <div class="export-wrap">
@@ -599,6 +653,19 @@
 </div>
 
 </div><!-- /#appShell -->
+
+<!-- ══════════════════════════ NAME PROMPT MODAL ══════════════════════════ -->
+<div id="nameModal">
+  <div class="name-modal-box">
+    <h3>No customer name entered</h3>
+    <p>Adding a customer name labels the export file and the first row of the spreadsheet. Would you like to add one before exporting?</p>
+    <input type="text" id="modalNameInput" placeholder="Customer name…" onkeydown="if(event.key==='Enter') nameModalConfirm()">
+    <div class="name-modal-actions">
+      <button class="btn-skip" onclick="nameModalSkip()">Continue without name</button>
+      <button class="btn-go"   onclick="nameModalConfirm()">Export</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══════════════════════════ SCRIPT ══════════════════════════ -->
 <script>
@@ -1887,9 +1954,33 @@ function getCurrentTab() {
   return btn ? btn.dataset.tab : 'spirits';
 }
 
+let _nameModalResolve = null;
+
+function requireCustomerName() {
+  const val = document.getElementById('customerName').value.trim();
+  if (val) return Promise.resolve(val);
+  return new Promise(resolve => {
+    _nameModalResolve = resolve;
+    document.getElementById('modalNameInput').value = '';
+    document.getElementById('nameModal').classList.add('open');
+    setTimeout(() => document.getElementById('modalNameInput').focus(), 50);
+  });
+}
+function nameModalConfirm() {
+  const v = document.getElementById('modalNameInput').value.trim();
+  const name = v || 'Customer';
+  if (v) document.getElementById('customerName').value = v;
+  document.getElementById('nameModal').classList.remove('open');
+  if (_nameModalResolve) { _nameModalResolve(name); _nameModalResolve = null; }
+}
+function nameModalSkip() {
+  document.getElementById('nameModal').classList.remove('open');
+  if (_nameModalResolve) { _nameModalResolve('Customer'); _nameModalResolve = null; }
+}
+
 async function exportCurrent() {
   const tab = getCurrentTab();
-  const cn  = document.getElementById('customerName').value || 'Customer';
+  const cn  = await requireCustomerName();
   const fml = useFormulas();
   const wb  = XLSX.utils.book_new();
   if (tab === 'spirits' && spiritsData.length > 0) {
@@ -1909,11 +2000,11 @@ async function exportCurrent() {
   await downloadWorkbook(wb, `${cn.replace(/[^a-zA-Z0-9 ]/g,'_')} - ${tabLabel} GP Pricing.xlsx`);
 }
 
-function exportAll() { exportWorkbook(useFormulas()); }
+async function exportAll() { exportWorkbook(useFormulas(), await requireCustomerName()); }
 
 /* ─────────────── EXPORT ─────────────── */
-async function exportWorkbook(fml = false) {
-  const cn = document.getElementById('customerName').value || 'Customer';
+async function exportWorkbook(fml = false, cn) {
+  cn = cn || document.getElementById('customerName').value || 'Customer';
   const wb = XLSX.utils.book_new();
 
   if (spiritsData.length > 0)   addSpiritsSheet(wb, cn, fml);

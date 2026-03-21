@@ -795,7 +795,7 @@
       </button>
       <button class="nfd-btn nfd-btn-reload" onclick="nfdReloadCurrent()">
         Reload for current customer
-        <small>Updates costs — saved prices will be re-applied</small>
+        <small>Updates costs and products — saved prices will be re-applied</small>
       </button>
       <button class="nfd-btn nfd-btn-cancel" onclick="nfdCancel()">Cancel</button>
     </div>
@@ -2861,6 +2861,7 @@ document.getElementById('statusDate').textContent =
     document.getElementById('customerName').value = customerName;
     document.getElementById('customerName').placeholder = 'Enter customer name…';
     const ov = data.overrides || {};
+    restoreRetroState(data.retro);
 
     showToast(`📂 ${customerName} loaded — remember to drop in their latest price file from Power BI`);
 
@@ -2910,6 +2911,29 @@ document.getElementById('statusDate').textContent =
     }
   }
 
+  /* ── Retro state helpers ── */
+  function buildRetroState() {
+    const r = {};
+    for (const tab of ['spirits','wine','beer','soft','other'])
+      r[tab] = { value: retroState[tab], enabled: retroEnabled[tab] };
+    return r;
+  }
+
+  function restoreRetroState(retro) {
+    if (!retro) return;
+    for (const tab of ['spirits','wine','beer','soft','other']) {
+      const r = retro[tab]; if (!r) continue;
+      retroState[tab]   = r.value   || 0;
+      retroEnabled[tab] = r.enabled || false;
+      const valEl = document.getElementById(tab + 'Retro');
+      const chkEl = document.getElementById(tab + 'RetroEnabled');
+      const grpEl = document.getElementById(tab + 'RetroGroup');
+      if (valEl) valEl.value = retroState[tab];
+      if (chkEl) chkEl.checked = retroEnabled[tab];
+      if (grpEl) grpEl.classList.toggle('retro-active', retroEnabled[tab]);
+    }
+  }
+
   /* ── Snapshot current sell prices into override object ── */
   function buildOverrides() {
     const ov = {};
@@ -2956,7 +2980,7 @@ document.getElementById('statusDate').textContent =
     btn.textContent = 'Saving…'; btn.disabled = true;
 
     try {
-      const payload = { customerName, overrides: buildOverrides(), updatedAt: new Date().toISOString() };
+      const payload = { customerName, overrides: buildOverrides(), retro: buildRetroState(), updatedAt: new Date().toISOString() };
       if (activeProfileId) {
         await fsPatch(`users/${uid}/profiles/${activeProfileId}`, payload);
       } else {

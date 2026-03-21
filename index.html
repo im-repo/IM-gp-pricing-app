@@ -2850,6 +2850,7 @@ document.getElementById('statusDate').textContent =
       nameEl.value = '';
       nameEl.placeholder = 'Enter new customer name…';
       setTimeout(() => nameEl.focus(), 50);
+      showToast('📂 New customer — remember to drop in their price file from Power BI');
       return;
     }
 

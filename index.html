@@ -1202,11 +1202,12 @@ function parseRows(rows) {
       const cp125 = bottle ? civ / WINE_750_SERVES.g125 : null;
       const spParsed = parseWineSubCat(subCat);
       const spGroup  = getWineGroup(spParsed.colour, 'Prosecco, Champagne & Other Sparkling') || 'Prosecco, Champagne & Other Sparkling';
+      const spCountry = /champagne/i.test(subCat) ? 'France' : spParsed.country;
       sparkWineData.push({
         code, subCat, name: desc, size, unitPrice: costPerUnit, costIncVAT: civ, unitsPerCase,
         isBottle: bottle,
         wineGroup: spGroup,
-        country: spParsed.country,
+        country: spCountry,
         costPer125: cp125,
         gp125:   gpWine, sell125:   cp125 ? r2(sellFromGP(cp125, gpWine)) : null,
         gpBottle: gpWine, sellBottle: r2(sellFromGP(civ, gpWine)),

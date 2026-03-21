@@ -2920,11 +2920,10 @@ document.getElementById('statusDate').textContent =
   }
 
   function restoreRetroState(retro) {
-    if (!retro) return;
     for (const tab of ['spirits','wine','beer','soft','other']) {
-      const r = retro[tab]; if (!r) continue;
-      retroState[tab]   = r.value   || 0;
-      retroEnabled[tab] = r.enabled || false;
+      const r = retro?.[tab];
+      retroState[tab]   = r?.value   || 0;
+      retroEnabled[tab] = r?.enabled || false;
       const valEl = document.getElementById(tab + 'Retro');
       const chkEl = document.getElementById(tab + 'RetroEnabled');
       const grpEl = document.getElementById(tab + 'RetroGroup');

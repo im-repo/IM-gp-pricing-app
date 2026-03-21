@@ -336,6 +336,17 @@
       padding-bottom: 8px;
     }
     .wine-section-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+
+    /* ── Toast notification ── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(12px);
+      background: #1e2830; color: #e9eef3; padding: 11px 20px; border-radius: 8px;
+      font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s, transform 0.25s;
+      z-index: 9000; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     .wine-section-label {
       font-size: 11px; font-weight: 700; color: var(--accent);
       text-transform: uppercase; letter-spacing: 0.8px;
@@ -548,7 +559,7 @@
   <div class="header-actions">
     <div class="export-wrap">
       <button class="btn btn-export" onclick="toggleExportMenu(event)" id="exportBtn" disabled>⬇ Export ▾</button>
-      <div class="export-menu" id="exportMenu" style="display:none">
+      <div class="export-menu" id="exportMenu" style="display:none" onclick="event.stopPropagation()">
         <span class="menu-label">Export options</span>
         <label class="menu-formula-opt">
           <input type="checkbox" id="exportFormulas">
@@ -769,6 +780,8 @@
 </div>
 
 </div><!-- /#appShell -->
+
+<div id="toast"></div>
 
 <!-- ══════════════════════════ NEW FILE DIALOG ══════════════════════════ -->
 <div id="newFileDialog">
@@ -2242,6 +2255,16 @@ function switchTab(tab) {
 /* ─────────────── STATUS ─────────────── */
 function setStatus(msg) { document.getElementById('statusMsg').textContent = msg; }
 
+/* ─────────────── TOAST ─────────────── */
+let _toastTimer = null;
+function showToast(msg, duration = 4000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), duration);
+}
+
 /* ─────────────── EXPORT MENU ─────────────── */
 function toggleExportMenu(e) {
   e.stopPropagation();
@@ -2820,13 +2843,25 @@ document.getElementById('statusDate').textContent =
     const id  = sel.value;
     document.getElementById('deleteProfileBtn').disabled = !id;
     activeProfileId = id || null;
-    if (!id) { window.pendingOverrides = null; return; }
+    if (!id) {
+      // New profile — clear customer name and invite the rep to name it
+      window.pendingOverrides = null;
+      const nameEl = document.getElementById('customerName');
+      nameEl.value = '';
+      nameEl.placeholder = 'Enter new customer name…';
+      setTimeout(() => nameEl.focus(), 50);
+      return;
+    }
 
     const uid  = auth.currentUser?.uid;
     const snap = await fsGet(`users/${uid}/profiles/${id}`);
     const data = fromFsDoc(snap);
-    document.getElementById('customerName').value = data.customerName || '';
+    const customerName = data.customerName || '';
+    document.getElementById('customerName').value = customerName;
+    document.getElementById('customerName').placeholder = 'Enter customer name…';
     const ov = data.overrides || {};
+
+    showToast(`📂 ${customerName} loaded — remember to drop in their latest price file from Power BI`);
 
     const dataLoaded = spiritsData.length > 0 || beerData.length > 0 ||
                        stillWineData.length > 0 || softData.length > 0;

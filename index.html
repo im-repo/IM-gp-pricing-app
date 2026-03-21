@@ -1745,7 +1745,7 @@ function onWineCellChange(e) {
 
 function syncWineSibling(tblId, idx, measure, wtype, field, val) {
   document.querySelectorAll(
-    `#${tblId} input[data-idx="${idx}"][data-measure="${measure}"][data-wtype="${wtype}"][data-field="${field}"]`
+    `input[data-idx="${idx}"][data-measure="${measure}"][data-wtype="${wtype}"][data-field="${field}"]`
   ).forEach(i => { i.value = val; });
 }
 
@@ -2198,21 +2198,36 @@ function applySubcatGP(tab, groupKey, gp) {
     }
     renderSpirits();
   } else if (tab === 'wine') {
-    for (const item of stillWineData) {
-      if (item.wineGroup !== groupKey) continue;
-      item.gpBottle = gp; item.sellBottle = r2(sellFromGP(ec(item.costIncVAT,'wine'), gp));
-      if (item.isBottle) {
-        for (const m of ['125','175','250']) {
-          const cost = item['costPer'+m];
-          if (cost) { item['gp'+m] = gp; item['sell'+m] = r2(sellFromGP(ec(cost,'wine'), gp)); }
+    const isFortified = groupKey.startsWith(FORTIFIED_GROUP_LABEL + ':');
+    if (isFortified) {
+      const fortSubCat = groupKey.substring(FORTIFIED_GROUP_LABEL.length + 1);
+      for (const item of [...stillWineData, ...sparkWineData]) {
+        if (item.wineGroup !== FORTIFIED_GROUP_LABEL || item.subCat !== fortSubCat) continue;
+        item.gpBottle = gp; item.sellBottle = r2(sellFromGP(ec(item.costIncVAT,'wine'), gp));
+        if (item.isBottle) {
+          for (const m of ['125','175','250']) {
+            const cost = item['costPer'+m];
+            if (cost) { item['gp'+m] = gp; item['sell'+m] = r2(sellFromGP(ec(cost,'wine'), gp)); }
+          }
         }
       }
-    }
-    for (const item of sparkWineData) {
-      if (item.wineGroup !== groupKey) continue;
-      item.gpBottle = gp; item.sellBottle = r2(sellFromGP(ec(item.costIncVAT,'wine'), gp));
-      if (item.isBottle && item.costPer125) {
-        item.gp125 = gp; item.sell125 = r2(sellFromGP(ec(item.costPer125,'wine'), gp));
+    } else {
+      for (const item of stillWineData) {
+        if (item.wineGroup !== groupKey) continue;
+        item.gpBottle = gp; item.sellBottle = r2(sellFromGP(ec(item.costIncVAT,'wine'), gp));
+        if (item.isBottle) {
+          for (const m of ['125','175','250']) {
+            const cost = item['costPer'+m];
+            if (cost) { item['gp'+m] = gp; item['sell'+m] = r2(sellFromGP(ec(cost,'wine'), gp)); }
+          }
+        }
+      }
+      for (const item of sparkWineData) {
+        if (item.wineGroup !== groupKey) continue;
+        item.gpBottle = gp; item.sellBottle = r2(sellFromGP(ec(item.costIncVAT,'wine'), gp));
+        if (item.isBottle && item.costPer125) {
+          item.gp125 = gp; item.sell125 = r2(sellFromGP(ec(item.costPer125,'wine'), gp));
+        }
       }
     }
     renderWine();

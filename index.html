@@ -2087,12 +2087,12 @@ function onBottleCellChange(e) {
   if (field === 'sell') {
     const v = parseFloat(inp.value); if (isNaN(v) || v <= 0) return;
     item.sell = r2(v); item.gp = r4(gpFromSell(cost, v));
-    document.querySelectorAll(`#${tab}Table input[data-tab="${tab}"][data-idx="${idx}"][data-field="gp"]`)
+    document.querySelectorAll(`input[data-tab="${tab}"][data-idx="${idx}"][data-field="gp"]`)
       .forEach(i => { i.value = (item.gp * 100).toFixed(1); });
   } else {
     const v = parseFloat(inp.value) / 100; if (isNaN(v) || v >= 1 || v < 0) return;
     item.gp = r4(v); item.sell = r2(sellFromGP(cost, v));
-    document.querySelectorAll(`#${tab}Table input[data-tab="${tab}"][data-idx="${idx}"][data-field="sell"]`)
+    document.querySelectorAll(`input[data-tab="${tab}"][data-idx="${idx}"][data-field="sell"]`)
       .forEach(i => { i.value = item.sell.toFixed(2); });
   }
 }
